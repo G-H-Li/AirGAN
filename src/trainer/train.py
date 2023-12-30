@@ -12,9 +12,11 @@ from sklearn.cluster import KMeans
 
 from src.dataset.parser import TrainDataset, ValDataset, TestDataset
 
+# TODO 修改临时结果存储模块
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Multi-city AQI forecasting')
-    parser.add_argument('--device', type=str, default='cpu', help='cuda, cpu')
+    parser.add_argument('--device', type=str, default='cuda', help='cuda, cpu')
     parser.add_argument('--mode', type=str, default='full', help='')
     parser.add_argument('--encoder', type=str, default='self', help='')
     parser.add_argument('--w_init', type=str, default='rand', help='')
@@ -41,12 +43,13 @@ if __name__ == "__main__":
     val_dataset = ValDataset()
     test_dataset = TestDataset()
     print(len(train_dataset) + len(val_dataset) + len(test_dataset))
+    # 此处加载数据由于num_worker过大会导致内存占用过多
     train_loader = Data.DataLoader(train_dataset, batch_size=args.batch_size,
-                                   shuffle=True, num_workers=8, pin_memory=True)
+                                   shuffle=True, num_workers=2, pin_memory=True)
     val_loader = Data.DataLoader(val_dataset, batch_size=args.batch_size,
-                                 shuffle=False, num_workers=8, pin_memory=True)
+                                 shuffle=False, num_workers=2, pin_memory=True)
     test_loader = Data.DataLoader(test_dataset, batch_size=args.batch_size,
-                                  shuffle=False, num_workers=8, pin_memory=True)
+                                  shuffle=False, num_workers=2, pin_memory=True)
     device = args.device
     # city_index = [0,2,30,32,43]
     # 获取当前脚本所在的目录
