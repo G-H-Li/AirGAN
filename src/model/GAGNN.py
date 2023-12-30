@@ -11,6 +11,19 @@ TIME_WINDOW = 24
 PRED_LEN = 6
 
 
+def _batch_input_(x, edge_w, edge_index):
+    sta_num = x.shape[1]
+    x = x.reshape(-1, x.shape[-1])
+    edge_w = edge_w.reshape(-1, edge_w.shape[-1])
+    for i in range(edge_index.size(0)):
+        edge_index[i, :] = torch.add(edge_index[i, :], i * sta_num)
+    # print(edge_index.shape)
+    edge_index = edge_index.transpose(0, 1)
+    # print(edge_index.shape)
+    edge_index = edge_index.reshape(2, -1)
+    return x, edge_w, edge_index
+
+
 class GAGNN(nn.Module):
     def __init__(self, mode, encoder, w_init, w, x_em, date_em, loc_em, edge_h, gnn_h, gnn_layer, city_num, group_num,
                  pred_step, device):
@@ -53,18 +66,6 @@ class GAGNN(nn.Module):
             self.decoder = DecoderModule(x_em, edge_h, gnn_h, gnn_layer, city_num, group_num, device)
             self.predMLP = Seq(Lin(gnn_h, 16), ReLU(inplace=True), Lin(16, self.pred_step), ReLU(inplace=True))
 
-    def batchInput(self, x, edge_w, edge_index):
-        sta_num = x.shape[1]
-        x = x.reshape(-1, x.shape[-1])
-        edge_w = edge_w.reshape(-1, edge_w.shape[-1])
-        for i in range(edge_index.size(0)):
-            edge_index[i, :] = torch.add(edge_index[i, :], i * sta_num)
-        # print(edge_index.shape)
-        edge_index = edge_index.transpose(0, 1)
-        # print(edge_index.shape)
-        edge_index = edge_index.reshape(2, -1)
-        return x, edge_w, edge_index
-
     def forward(self, x, u, edge_index, edge_w, loc):
         x = x.reshape(-1, x.shape[2], x.shape[3])
         if self.encoder == 'self':
@@ -106,7 +107,8 @@ class GAGNN(nn.Module):
         # print(u_em.shape)
         for i in range(self.group_num):
             for j in range(self.group_num):
-                if i == j: continue
+                if i == j:
+                    continue
                 g_edge_input = torch.cat([g_x[:, i], g_x[:, j], u_em], dim=-1)
                 tmp_g_edge_w = self.edge_inf(g_edge_input)
                 tmp_g_edge_w = tmp_g_edge_w.unsqueeze(dim=0)
@@ -123,7 +125,7 @@ class GAGNN(nn.Module):
         g_edge_index = g_edge_index.repeat_interleave(u_em.shape[0], dim=0)
         g_edge_index = g_edge_index.transpose(1, 2)
         # print(g_x.shape,g_edge_w.shape,g_edge_index.shape)
-        g_x, g_edge_w, g_edge_index = self.batchInput(g_x, g_edge_w, g_edge_index)
+        g_x, g_edge_w, g_edge_index = _batch_input_(g_x, g_edge_w, g_edge_index)
         # print(g_x.shape,g_edge_w.shape,g_edge_index.shape)
         for i in range(self.gnn_layer):
             g_x = self.group_gnn[i](g_x, g_edge_index, g_edge_w)
@@ -137,7 +139,7 @@ class GAGNN(nn.Module):
         new_x = torch.cat([x, new_x], dim=-1)
         edge_w = edge_w.unsqueeze(dim=-1)
         # print(new_x.shape,edge_w.shape,edge_index.shape)
-        new_x, edge_w, edge_index = self.batchInput(new_x, edge_w, edge_index)
+        new_x, edge_w, edge_index = _batch_input_(new_x, edge_w, edge_index)
         # print(new_x.shape,edge_w.shape,edge_index.shape)
         for i in range(self.gnn_layer):
             new_x = self.global_gnn[i](new_x, edge_index, edge_w)

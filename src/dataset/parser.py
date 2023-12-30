@@ -4,18 +4,21 @@ import os
 import torch
 import torch.utils.data as Data
 
-path = './data'
+# 获取当前脚本所在的目录
+current_directory = os.path.dirname(__file__)
+# 构造相对路径
+relative_path = '..\\..\\data'  # 以当前脚本所在目录为基准的相对路径
 
 
 class TrainDataset(Data.Dataset):
-    def __init__(self, transform=None, train=True):
-        self.x = np.load(os.path.join(path, 'train_x.npy'), allow_pickle=True)
-        self.u = np.load(os.path.join(path, 'train_u.npy'), allow_pickle=True)
-        self.y = np.load(os.path.join(path, 'train_y.npy'), allow_pickle=True)
-        self.edge_w = np.load(os.path.join(path, 'edge_w.npy'), allow_pickle=True)
-        self.edge_index = np.load(os.path.join(path, 'edge_index.npy'), allow_pickle=True)
-        self.loc = np.load(os.path.join(path, 'loc_filled.npy'), allow_pickle=True)
-        self.loc = self.loc.astype(np.float)
+    def __init__(self):
+        self.x = np.load(os.path.join(current_directory, relative_path, 'train_x.npy'), allow_pickle=True)
+        self.u = np.load(os.path.join(current_directory, relative_path, 'train_u.npy'), allow_pickle=True)
+        self.y = np.load(os.path.join(current_directory, relative_path, 'train_y.npy'), allow_pickle=True)
+        self.edge_w = np.load(os.path.join(current_directory, relative_path, 'edge_w.npy'), allow_pickle=True)
+        self.edge_index = np.load(os.path.join(current_directory, relative_path, 'edge_index.npy'), allow_pickle=True)
+        self.loc = np.load(os.path.join(current_directory, relative_path, 'loc_filled.npy'), allow_pickle=True)
+        self.loc = self.loc.astype(np.float64)
 
     def __getitem__(self, index):
         x = torch.FloatTensor(self.x[index])
@@ -36,14 +39,14 @@ class TrainDataset(Data.Dataset):
 
 
 class ValDataset(Data.Dataset):
-    def __init__(self, transform=None, train=True):
-        self.x = np.load(os.path.join(path, 'val_x.npy'), allow_pickle=True)
-        self.u = np.load(os.path.join(path, 'val_u.npy'), allow_pickle=True)
-        self.y = np.load(os.path.join(path, 'val_y.npy'), allow_pickle=True)
-        self.edge_w = np.load(os.path.join(path, 'edge_w.npy'), allow_pickle=True)
-        self.edge_index = np.load(os.path.join(path, 'edge_index.npy'), allow_pickle=True)
-        self.loc = np.load(os.path.join(path, 'loc_filled.npy'), allow_pickle=True)
-        self.loc = self.loc.astype(np.float)
+    def __init__(self):
+        self.x = np.load(os.path.join(current_directory, relative_path, 'val_x.npy'), allow_pickle=True)
+        self.u = np.load(os.path.join(current_directory, relative_path, 'val_u.npy'), allow_pickle=True)
+        self.y = np.load(os.path.join(current_directory, relative_path, 'val_y.npy'), allow_pickle=True)
+        self.edge_w = np.load(os.path.join(current_directory, relative_path, 'edge_w.npy'), allow_pickle=True)
+        self.edge_index = np.load(os.path.join(current_directory, relative_path, 'edge_index.npy'), allow_pickle=True)
+        self.loc = np.load(os.path.join(current_directory, relative_path, 'loc_filled.npy'), allow_pickle=True)
+        self.loc = self.loc.astype(np.float64)
 
     def __getitem__(self, index):
         x = torch.FloatTensor(self.x[index])
@@ -64,14 +67,14 @@ class ValDataset(Data.Dataset):
 
 
 class TestDataset(Data.Dataset):
-    def __init__(self, transform=None, train=True):
-        self.x = np.load(os.path.join(path, 'test_x.npy'), allow_pickle=True)
-        self.u = np.load(os.path.join(path, 'test_u.npy'), allow_pickle=True)
-        self.y = np.load(os.path.join(path, 'test_y.npy'), allow_pickle=True)
-        self.edge_w = np.load(os.path.join(path, 'edge_w.npy'), allow_pickle=True)
-        self.edge_index = np.load(os.path.join(path, 'edge_index.npy'), allow_pickle=True)
-        self.loc = np.load(os.path.join(path, 'loc_filled.npy'), allow_pickle=True)
-        self.loc = self.loc.astype(np.float)
+    def __init__(self):
+        self.x = np.load(os.path.join(current_directory, relative_path, 'test_x.npy'), allow_pickle=True)
+        self.u = np.load(os.path.join(current_directory, relative_path, 'test_u.npy'), allow_pickle=True)
+        self.y = np.load(os.path.join(current_directory, relative_path, 'test_y.npy'), allow_pickle=True)
+        self.edge_w = np.load(os.path.join(current_directory, relative_path, 'edge_w.npy'), allow_pickle=True)
+        self.edge_index = np.load(os.path.join(current_directory, relative_path, 'edge_index.npy'), allow_pickle=True)
+        self.loc = np.load(os.path.join(current_directory, relative_path, 'loc_filled.npy'), allow_pickle=True)
+        self.loc = self.loc.astype(np.float64)
 
     def __getitem__(self, index):
         x = torch.FloatTensor(self.x[index])
