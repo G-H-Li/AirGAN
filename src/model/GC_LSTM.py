@@ -1,8 +1,9 @@
-from model.cells import LSTMCell
 import torch.nn.functional as F
 from torch_geometric.nn import ChebConv
 import torch
 from torch import nn
+
+from src.model.Cells import LSTMCell
 
 
 class GC_LSTM(nn.Module):

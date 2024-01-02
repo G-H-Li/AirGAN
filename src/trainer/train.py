@@ -10,7 +10,7 @@ import torch.utils.data as Data
 from src.model.GAGNN import GAGNN
 from sklearn.cluster import KMeans
 
-from src.dataset.parser import TrainDataset, ValDataset, TestDataset
+from src.dataset.parser import GAGNNDataset
 
 # TODO 修改临时结果存储模块
 
@@ -39,9 +39,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
 
-    train_dataset = TrainDataset()
-    val_dataset = ValDataset()
-    test_dataset = TestDataset()
+    train_dataset = GAGNNDataset(mode='train')
+    val_dataset = GAGNNDataset(mode='val')
+    test_dataset = GAGNNDataset(mode='test')
     print(len(train_dataset) + len(val_dataset) + len(test_dataset))
     # 此处加载数据由于num_worker过大会导致内存占用过多
     train_loader = Data.DataLoader(train_dataset, batch_size=args.batch_size,
@@ -62,7 +62,7 @@ if __name__ == "__main__":
 
         w = None
         if args.w_init == 'group':
-            city_loc = np.load(os.path.join(current_directory, relative_path, 'loc_filled.npy'), allow_pickle=True)
+            city_loc = np.load(os.path.join(current_directory, relative_path, 'GAGNN_loc_filled.npy'), allow_pickle=True)
             kmeans = KMeans(n_clusters=args.group_num, random_state=0).fit(city_loc)
             group_list = kmeans.labels_.tolist()
             w = np.random.randn(args.city_num, args.group_num)

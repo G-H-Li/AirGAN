@@ -1,6 +1,7 @@
 import torch
 from torch import nn
-from GRU_Cells import GRUCell
+
+from src.model.Cells import GRUCell
 
 
 class GRU(nn.Module):

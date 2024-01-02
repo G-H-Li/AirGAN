@@ -1,6 +1,7 @@
 import torch
 from torch import nn
-from model.cells import LSTMCell
+
+from src.model.Cells import LSTMCell
 
 
 class LSTM(nn.Module):
