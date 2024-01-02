@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.dataset.parser import KnowAirDataset
+from src.model.GAGNN import GAGNN
 from src.model.GC_LSTM import GC_LSTM
 from src.model.GRU import GRU
 from src.model.LSTM import LSTM
@@ -104,9 +105,9 @@ class Trainer:
         :return: dataset loader
         """
         if self.config.dataset_name == 'KnowAir':
-            self.train_dataset = KnowAirDataset(config=self.config)
-            self.valid_dataset = KnowAirDataset(config=self.config)
-            self.test_dataset = KnowAirDataset(config=self.config)
+            self.train_dataset = KnowAirDataset(config=self.config, mode='train')
+            self.valid_dataset = KnowAirDataset(config=self.config, mode='valid')
+            self.test_dataset = KnowAirDataset(config=self.config, mode='test')
             self.in_dim = self.train_dataset.feature.shape[-1] + self.train_dataset.pm25.shape[-1]
             self.city_num = self.train_dataset.node_num
             self.edge_index = self.train_dataset.edge_index
@@ -159,6 +160,9 @@ class Trainer:
                             self.edge_attr,
                             self.wind_mean,
                             self.wind_std)
+        elif self.config.model_name == 'GAGNN':
+            # return GAGNN(self.config)
+            pass
         else:
             self.logger.error('Unsupported model name')
             raise Exception('Wrong model name')
@@ -183,7 +187,7 @@ class Trainer:
             self.optimizer.step()
             train_loss += loss.item()
 
-        train_loss /= batch_idx + 1
+        train_loss /= len(train_loader) + 1
         return train_loss
 
     def _valid(self, val_loader):
@@ -203,7 +207,7 @@ class Trainer:
             loss = self.criterion(pm25_pred, pm25_label)
             val_loss += loss.item()
 
-        val_loss /= batch_idx + 1
+        val_loss /= len(val_loader) + 1
         return val_loss
 
     def _test(self, test_loader):
@@ -232,7 +236,7 @@ class Trainer:
             predict_list.append(pm25_pred_val)
             label_list.append(pm25_label_val)
 
-        test_loss /= batch_idx + 1
+        test_loss /= len(test_loader) + 1
 
         predict_epoch = np.concatenate(predict_list, axis=0)
         label_epoch = np.concatenate(label_list, axis=0)
@@ -266,7 +270,7 @@ class Trainer:
             test_loader = DataLoader(self.test_dataset, batch_size=self.config.batch_size, shuffle=False,
                                      drop_last=True)
             # epoch variants
-            val_loss_min = 1.0e5
+            val_loss_min = np.inf
             best_epoch = 0
             self.train_loss_list = []
             self.test_loss_list = []

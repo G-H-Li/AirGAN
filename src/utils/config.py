@@ -49,8 +49,8 @@ class Config(object):
         self.train_end = experiment_config['train_end']
         self.test_start = experiment_config['test_start']
         self.test_end = experiment_config['test_end']
-        self.val_start = experiment_config['val_start']
-        self.val_end = experiment_config['val_end']
+        self.valid_start = experiment_config['valid_start']
+        self.valid_end = experiment_config['valid_end']
         # progress setting
         self.save_npy = experiment_config['save_npy']
         # model setting

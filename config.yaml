@@ -13,12 +13,13 @@ experiment:
                'v_component_of_wind+950',
                'hour',
                'weekday',
+               'month',
                'wind_speed',
                'wind_direction']
   train_start: [ [ 2015, 1, 1 ], GMT ]
   train_end: [ [ 2016, 12, 31 ], GMT ]
-  val_start: [ [ 2017, 1, 1 ], GMT ]
-  val_end: [ [ 2017, 12, 31 ], GMT ]
+  valid_start: [ [ 2017, 1, 1 ], GMT ]
+  valid_end: [ [ 2017, 12, 31 ], GMT ]
   test_start: [ [ 2018, 1, 1 ], GMT ]
   test_end: [ [ 2018, 12, 31 ], GMT ]
   # progress setting
@@ -28,7 +29,7 @@ experiment:
 
 # general hyperparameters setting
 general_hyper_params:
-  hist_len: 1
+  hist_len: 8
   pred_len: 24
   batch_size: 32
   epochs: 50
@@ -40,8 +41,6 @@ general_hyper_params:
 # model hyperparameters setting
 model_hyper_params:
   group_num: 15
-  gnn_layers: 2
-  gnn_hidden: 32
 
 # general filepath
 filepath:
@@ -54,6 +53,7 @@ filepath:
 KnowAir:
   data_start: [ [ 2015, 1, 1, 0, 0 ], GMT ]
   data_end: [ [ 2018, 12, 31, 21, 0 ], GMT ]
+  time_span_hour: 3
   city_num: 184
   meteo_params:
     ['100m_u_component_of_wind',
@@ -75,11 +75,13 @@ KnowAir:
      'vorticity+950',
      'hour',
      'weekday',
+     'month',
      'wind_speed',
      'wind_direction']
 GAGNN:
   data_start: [ [ 2017, 1, 1, 0, 0 ], GMT ]
   data_end: [ [ 2019, 4, 30, 12, 0 ], GMT ]
+  time_span_hour: 1
   city_num: 209
   # Currently don't know the order of parameters and the specific meaning of a parameter
   meteo_params:

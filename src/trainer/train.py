@@ -11,8 +11,8 @@ from src.model.GAGNN import GAGNN
 from sklearn.cluster import KMeans
 
 from src.dataset.parser import GAGNNDataset
+from src.utils.config import Config
 
-# TODO 修改临时结果存储模块
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Multi-city AQI forecasting')
@@ -21,9 +21,9 @@ if __name__ == "__main__":
     parser.add_argument('--encoder', type=str, default='self', help='')
     parser.add_argument('--w_init', type=str, default='rand', help='')
     parser.add_argument('--mark', type=str, default='', help='')
-    parser.add_argument('--run_times', type=int, default=5, help='')
-    parser.add_argument('--epoch', type=int, default=300, help='')
-    parser.add_argument('--batch_size', type=int, default=64, help='')
+    parser.add_argument('--run_times', type=int, default=1, help='')
+    parser.add_argument('--epoch', type=int, default=50, help='')
+    parser.add_argument('--batch_size', type=int, default=32, help='')
     parser.add_argument('--w_rate', type=int, default=50, help='')
     parser.add_argument('--city_num', type=int, default=209, help='')
     parser.add_argument('--group_num', type=int, default=15, help='')
@@ -33,15 +33,16 @@ if __name__ == "__main__":
     parser.add_argument('--date_em', type=int, default=4, help='date embedding')
     parser.add_argument('--loc_em', type=int, default=12, help='loc embedding')
     parser.add_argument('--edge_h', type=int, default=12, help='edge h')
-    parser.add_argument('--lr', type=float, default=0.001, help='lr')
-    parser.add_argument('--wd', type=float, default=0.001, help='weight decay')
-    parser.add_argument('--pred_step', type=int, default=6, help='step')
+    parser.add_argument('--lr', type=float, default=0.0005, help='lr')
+    parser.add_argument('--wd', type=float, default=0.0005, help='weight decay')
+    parser.add_argument('--pred_step', type=int, default=72, help='step')
     args = parser.parse_args()
     print(args)
 
-    train_dataset = GAGNNDataset(mode='train')
-    val_dataset = GAGNNDataset(mode='val')
-    test_dataset = GAGNNDataset(mode='test')
+    config = Config()
+    train_dataset = GAGNNDataset(mode='train', config=config)
+    val_dataset = GAGNNDataset(mode='val', config=config)
+    test_dataset = GAGNNDataset(mode='test', config=config)
     print(len(train_dataset) + len(val_dataset) + len(test_dataset))
     # 此处加载数据由于num_worker过大会导致内存占用过多
     train_loader = Data.DataLoader(train_dataset, batch_size=args.batch_size,

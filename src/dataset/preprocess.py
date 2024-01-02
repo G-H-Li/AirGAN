@@ -205,16 +205,20 @@ class KnowAirFeatureAndPm25:
 
         h_arr = []
         w_arr = []
+        m_arr = []
         for i in self.time_arrow:
             h_arr.append(i.hour)
             w_arr.append(i.isoweekday())
+            m_arr.append(i.month)
         h_arr = np.stack(h_arr, axis=-1)
         w_arr = np.stack(w_arr, axis=-1)
+        m_arr = np.stack(m_arr, axis=-1)
         h_arr = np.repeat(h_arr[:, None], self.node_num, axis=1)
         w_arr = np.repeat(w_arr[:, None], self.node_num, axis=1)
+        m_arr = np.repeat(m_arr[:, None], self.node_num, axis=1)
 
         self.feature = np.concatenate([self.feature, h_arr[:, :, None], w_arr[:, :, None],
-                                       speed[:, :, None], direction[:, :, None]
+                                       m_arr[:, :, None], speed[:, :, None], direction[:, :, None]
                                        ], axis=-1)
 
     def _process_time(self):

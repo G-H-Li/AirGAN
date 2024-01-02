@@ -44,8 +44,8 @@ class KnowAirDataset(data.Dataset):
     """
     Preprocess for KnowAir dataset
     """
-    def __init__(self, config: Config, hist_len=1, pred_len=24, mode='train'):
-        if mode not in ['train', 'val', 'test']:
+    def __init__(self, config: Config, mode='train'):
+        if mode not in ['train', 'valid', 'test']:
             raise ValueError(f'Invalid mode: {mode}')
         # process graph
         self.nodes = np.load(os.path.join(config.dataset_dir, 'KnowAir_loc_filled.npy'))
@@ -61,7 +61,7 @@ class KnowAirDataset(data.Dataset):
         self._process_feature(config)
         # sequence data general preprocess, consider the history data
         self._calc_mean_std()
-        seq_len = hist_len + pred_len
+        seq_len = config.hist_len + config.pred_len
         self._add_time_dim(seq_len)
         self._norm()
 
