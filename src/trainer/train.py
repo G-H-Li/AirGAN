@@ -7,12 +7,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.data as Data
-from src.model.GAGNN import GAGNN
+from src.model.GAGNN import GAGNNOld
 from sklearn.cluster import KMeans
 
 from src.dataset.parser import GAGNNDataset
 from src.utils.config import Config
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Multi-city AQI forecasting')
@@ -63,7 +62,8 @@ if __name__ == "__main__":
 
         w = None
         if args.w_init == 'group':
-            city_loc = np.load(os.path.join(current_directory, relative_path, 'GAGNN_loc_filled.npy'), allow_pickle=True)
+            city_loc = np.load(os.path.join(current_directory, relative_path, 'GAGNN_loc_filled.npy'),
+                               allow_pickle=True)
             kmeans = KMeans(n_clusters=args.group_num, random_state=0).fit(city_loc)
             group_list = kmeans.labels_.tolist()
             w = np.random.randn(args.city_num, args.group_num)
@@ -72,9 +72,10 @@ if __name__ == "__main__":
                 w[i, group_list[i]] = 1.0
             w = torch.FloatTensor(w).to(device, non_blocking=True)
 
-        city_model = GAGNN(args.mode, args.encoder, args.w_init, w, args.x_em, args.date_em, args.loc_em, args.edge_h,
-                           args.gnn_h,
-                           args.gnn_layer, args.city_num, args.group_num, args.pred_step, device).to(device)
+        city_model = GAGNNOld(args.mode, args.encoder, args.w_init, w, args.x_em, args.date_em, args.loc_em,
+                              args.edge_h,
+                              args.gnn_h,
+                              args.gnn_layer, args.city_num, args.group_num, args.pred_step, device).to(device)
         city_num = sum(p.numel() for p in city_model.parameters() if p.requires_grad)
         print('city_model:', 'Trainable,', city_num)
         # print(city_model)

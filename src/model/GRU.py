@@ -19,7 +19,7 @@ class GRU(nn.Module):
         self.fc_out = nn.Linear(self.hid_dim, self.out_dim)
         self.gru_cell = GRUCell(self.hid_dim, self.hid_dim)
 
-    def forward(self, pm25_hist, feature):
+    def forward(self, pm25_hist, feature, time_feature):
         pm25_pred = []
         h0 = torch.zeros(self.batch_size * self.city_num, self.hid_dim).to(self.device)
         hn = h0

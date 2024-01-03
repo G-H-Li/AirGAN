@@ -4,7 +4,6 @@ experiment:
   # dataset setting
   dataset_name: KnowAir
   used_meteo_params: ['2m_temperature',
-               'boundary_layer_height',
                'k_index',
                'relative_humidity+950',
                'surface_pressure',
@@ -25,7 +24,7 @@ experiment:
   # progress setting
   save_npy: True
   # model setting, optional: ARIMA, MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirGAN
-  model_name: PM25_GNN
+  model_name: GAGNN
 
 # general hyperparameters setting
 general_hyper_params:
@@ -34,13 +33,13 @@ general_hyper_params:
   batch_size: 32
   epochs: 50
   exp_times: 1
-  weight_decay: 0.0005
-  weight_rate: 50
-  lr: 0.0005
+  weight_decay: 0.01
+  lr: 0.01
   early_stop: 10
 # model hyperparameters setting
 model_hyper_params:
   group_num: 15
+  weight_rate: 50
 
 # general filepath
 filepath:

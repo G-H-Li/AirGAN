@@ -87,7 +87,7 @@ class PM25_GNN(nn.Module):
         self.gru_cell = GRUCell(self.in_dim + self.gnn_out, self.hid_dim)
         self.fc_out = nn.Linear(self.hid_dim, self.out_dim)
 
-    def forward(self, pm25_hist, feature):
+    def forward(self, pm25_hist, feature, time_feature):
         pm25_pred = []
         h0 = torch.zeros(self.batch_size * self.city_num, self.hid_dim).to(self.device)
         hn = h0

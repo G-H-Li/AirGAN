@@ -25,7 +25,7 @@ class GC_LSTM(nn.Module):
         self.lstm_cell = LSTMCell(self.in_dim + self.gcn_out, self.hid_dim)
         self.fc_out = nn.Linear(self.hid_dim, self.out_dim)
 
-    def forward(self, pm25_hist, feature):
+    def forward(self, pm25_hist, feature, time_feature):
         self.edge_index = self.edge_index.to(self.device)
         pm25_pred = []
         h0 = torch.zeros(self.batch_size * self.city_num, self.hid_dim).to(self.device)

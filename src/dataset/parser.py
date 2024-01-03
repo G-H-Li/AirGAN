@@ -53,14 +53,14 @@ class KnowAirDataset(data.Dataset):
         self.edge_attr = np.load(os.path.join(config.dataset_dir, 'KnowAir_edge_attr.npy'))
         self.node_num = self.nodes.shape[0]
         self.edge_num = self.edge_index.shape[1]
-        self.adj = to_dense_adj(torch.LongTensor(self.edge_index))[0]
+        # self.adj = to_dense_adj(torch.LongTensor(self.edge_index))[0]
         # process pm25 and meteo feature
         self.feature = np.load(os.path.join(config.dataset_dir, 'KnowAir_feature.npy'))
         self.pm25 = np.load(os.path.join(config.dataset_dir, 'KnowAir_pm25.npy'))
         self._process_time(config, mode)
         self._process_feature(config)
-        # sequence data general preprocess, consider the history data
         self._calc_mean_std()
+        # sequence data general preprocess, consider the history data
         seq_len = config.hist_len + config.pred_len
         self._add_time_dim(seq_len)
         self._norm()
@@ -96,6 +96,8 @@ class KnowAirDataset(data.Dataset):
         meteo_use = config.used_meteo_params
         meteo_idx = [meteo_var.index(var) for var in meteo_use]
         self.feature = self.feature[:, :, meteo_idx]
+        time_feature = self.feature[:, :, -5:-2]
+        self.time_feature = np.unique(time_feature, axis=1).squeeze()
 
     def _process_time(self, config, mode):
         self.start_time = get_time(config.__getattribute__(f'{mode}_start'))
@@ -115,7 +117,7 @@ class KnowAirDataset(data.Dataset):
         return len(self.pm25)
 
     def __getitem__(self, index):
-        return self.pm25[index], self.feature[index]
+        return self.pm25[index], self.feature[index], self.time_feature[index]
 
 
 if __name__ == '__main__':

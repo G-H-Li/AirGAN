@@ -68,7 +68,6 @@ class Config(object):
         self.epochs = hyper_params_config['epochs']
         self.exp_times = hyper_params_config['exp_times']
         self.weight_decay = hyper_params_config['weight_decay']
-        self.weight_rate = hyper_params_config['weight_rate']
         self.lr = hyper_params_config['lr']
         self.early_stop = hyper_params_config['early_stop']
 
@@ -82,8 +81,7 @@ class Config(object):
         model_params_config = self.config['model_hyper_params']
         if self.model_name == 'GAGNN':
             self.group_num = model_params_config['group_num']
-            self.gnn_layers = model_params_config['gnn_layers']
-            self.gnn_hidden = model_params_config['gnn_hidden']
+            self.weight_rate = model_params_config['weight_rate']
 
     def _read_data_info_config(self):
         """

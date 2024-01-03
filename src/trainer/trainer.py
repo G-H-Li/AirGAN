@@ -70,10 +70,9 @@ class Trainer:
         self.model = self._get_model()
         self.model = self.model.to(self.device)
         # train setting
-        self.criterion = nn.MSELoss()
-        self.optimizer = torch.optim.RMSprop(self.model.parameters(),
-                                             lr=self.config.lr,
-                                             weight_decay=self.config.weight_decay)
+        self.criterion = self._get_criterion()
+        self.optimizer = self._get_optimizer()
+        # result save list
         self.train_loss_list = []
         self.test_loss_list = []
         self.valid_loss_list = []
@@ -112,11 +111,44 @@ class Trainer:
             self.city_num = self.train_dataset.node_num
             self.edge_index = self.train_dataset.edge_index
             self.edge_attr = self.train_dataset.edge_attr
+            self.city_loc = self.train_dataset.nodes
             self.wind_mean, self.wind_std = self.train_dataset.wind_mean, self.train_dataset.wind_std
             self.pm25_mean, self.pm25_std = self.test_dataset.pm25_mean, self.test_dataset.pm25_std
         else:
             self.logger.error("Unsupported dataset type")
             raise ValueError('Unknown dataset')
+
+    def _get_criterion(self):
+        """
+        define the loss function
+        :return:
+        """
+        if self.config.model_name == "GAGNN":
+            return nn.L1Loss(reduction='sum')
+        else:
+            return nn.MSELoss()
+
+    def _get_optimizer(self):
+        """
+        define the optimizer function
+        :return:
+        """
+        if self.config.model_name == "GAGNN":
+            all_params = self.model.parameters()
+            w_params = []
+            for pname, p in self.model.named_parameters():
+                if pname == 'w':
+                    w_params += [p]
+            params_id = list(map(id, w_params))
+            other_params = list(filter(lambda p: id(p) not in params_id, all_params))
+            return torch.optim.Adam([
+                {'params': other_params},
+                {'params': w_params, 'lr': self.config.lr * self.config.weight_rate}
+            ], lr=self.config.lr, weight_decay=self.config.weight_decay)
+        else:
+            return torch.optim.RMSprop(self.model.parameters(),
+                                       lr=self.config.lr,
+                                       weight_decay=self.config.weight_decay)
 
     def _get_model(self):
         """
@@ -161,8 +193,16 @@ class Trainer:
                             self.wind_mean,
                             self.wind_std)
         elif self.config.model_name == 'GAGNN':
-            # return GAGNN(self.config)
-            pass
+            return GAGNN(self.config.hist_len,
+                         self.config.pred_len,
+                         self.in_dim-self.train_dataset.pm25.shape[-1],
+                         self.city_num,
+                         self.config.batch_size,
+                         self.device,
+                         self.edge_index,
+                         self.edge_attr,
+                         self.city_loc,
+                         self.config.group_num)
         else:
             self.logger.error('Unsupported model name')
             raise Exception('Wrong model name')
@@ -176,12 +216,13 @@ class Trainer:
         train_loss = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            pm25, feature = data
+            pm25, feature, time_feature = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
+            time_feature = time_feature.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature)
+            pm25_pred = self.model(pm25_hist, feature, time_feature)
             loss = self.criterion(pm25_pred, pm25_label)
             loss.backward()
             self.optimizer.step()
@@ -198,12 +239,13 @@ class Trainer:
         self.model.eval()
         val_loss = 0
         for batch_idx, data in tqdm(enumerate(val_loader)):
-            pm25, feature = data
+            pm25, feature, time_feature = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
+            time_feature = time_feature.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature)
+            pm25_pred = self.model(pm25_hist, feature, time_feature)
             loss = self.criterion(pm25_pred, pm25_label)
             val_loss += loss.item()
 
@@ -220,18 +262,19 @@ class Trainer:
         label_list = []
         test_loss = 0
         for batch_idx, data in enumerate(test_loader):
-            pm25, feature = data
+            pm25, feature, time_feature = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
+            time_feature = time_feature.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature)
+            pm25_pred = self.model(pm25_hist, feature, time_feature)
             loss = self.criterion(pm25_pred, pm25_label)
             test_loss += loss.item()
 
             pm25_pred_val = (
-                        np.concatenate([pm25_hist.cpu().detach().numpy(), pm25_pred.cpu().detach().numpy()], axis=1)
-                        * self.pm25_std + self.pm25_mean)
+                    np.concatenate([pm25_hist.cpu().detach().numpy(), pm25_pred.cpu().detach().numpy()], axis=1)
+                    * self.pm25_std + self.pm25_mean)
             pm25_label_val = pm25.cpu().detach().numpy() * self.pm25_std + self.pm25_mean
             predict_list.append(pm25_pred_val)
             label_list.append(pm25_label_val)

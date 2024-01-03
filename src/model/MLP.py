@@ -21,7 +21,7 @@ class MLP(nn.Module):
                                     Sigmoid()
                                     )
 
-    def forward(self, pm25_hist, feature):
+    def forward(self, pm25_hist, feature, time_feature):
         pm25_pred = []
         xn = pm25_hist[:, -1]
         for i in range(self.pred_len):
