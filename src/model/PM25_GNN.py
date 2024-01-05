@@ -91,7 +91,7 @@ class PM25_GNN(nn.Module):
         pm25_pred = []
         h0 = torch.zeros(self.batch_size * self.city_num, self.hid_dim).to(self.device)
         hn = h0
-        xn = pm25_hist[:, -1]
+        xn = pm25_hist.reshape(pm25_hist.shape[0], pm25_hist.shape[2], -1)
         for i in range(self.pred_len):
             x = torch.cat((xn, feature[:, self.hist_len + i]), dim=-1)
 
@@ -102,9 +102,11 @@ class PM25_GNN(nn.Module):
 
             hn = self.gru_cell(x, hn)
             # 将输出值归一化
-            xn = hn.view(self.batch_size, self.city_num, self.hid_dim)
-            xn = self.fc_out(xn)
-            pm25_pred.append(xn)
+            pred = hn.view(self.batch_size, self.city_num, self.hid_dim)
+            pred = self.fc_out(pred)
+            pm25_pred.append(pred)
+
+            xn = torch.cat((xn[:, :, 1:], pred), dim=-1)
 
         pm25_pred = torch.stack(pm25_pred, dim=1)
 

@@ -53,6 +53,8 @@ class Config(object):
         self.valid_end = experiment_config['valid_end']
         # progress setting
         self.save_npy = experiment_config['save_npy']
+        self.is_early_stop = experiment_config['is_early_stop']
+        self.early_stop = experiment_config['early_stop']
         # model setting
         self.model_name = experiment_config['model_name']
 
@@ -69,7 +71,6 @@ class Config(object):
         self.exp_times = hyper_params_config['exp_times']
         self.weight_decay = hyper_params_config['weight_decay']
         self.lr = hyper_params_config['lr']
-        self.early_stop = hyper_params_config['early_stop']
 
     def _read_model_params_config(self):
         """

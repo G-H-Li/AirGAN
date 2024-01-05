@@ -17,32 +17,7 @@ from src.model.MLP import MLP
 from src.model.PM25_GNN import PM25_GNN
 from src.utils.config import Config
 from src.utils.logger import TrainLogger
-
-
-def get_metrics(predict_epoch, label_epoch):
-    haze_threshold = 75
-    predict_haze = predict_epoch >= haze_threshold
-    predict_clear = predict_epoch < haze_threshold
-    label_haze = label_epoch >= haze_threshold
-    label_clear = label_epoch < haze_threshold
-    hit = np.sum(np.logical_and(predict_haze, label_haze))
-    miss = np.sum(np.logical_and(label_haze, predict_clear))
-    falsealarm = np.sum(np.logical_and(predict_haze, label_clear))
-    csi = hit / (hit + falsealarm + miss)
-    pod = hit / (hit + miss)
-    far = falsealarm / (hit + falsealarm)
-    predict = predict_epoch[:, :, :, 0].transpose((0, 2, 1))
-    label = label_epoch[:, :, :, 0].transpose((0, 2, 1))
-    predict = predict.reshape((-1, predict.shape[-1]))
-    label = label.reshape((-1, label.shape[-1]))
-    mae = np.mean(np.mean(np.abs(predict - label), axis=1))
-    rmse = np.mean(np.sqrt(np.mean(np.square(predict - label), axis=1)))
-    return rmse, mae, csi, pod, far
-
-
-def get_mean_std(data_list):
-    data = np.asarray(data_list)
-    return data.mean(), data.std()
+from src.utils.metrics import get_metrics, get_mean_std
 
 
 class Trainer:
@@ -107,7 +82,8 @@ class Trainer:
             self.train_dataset = KnowAirDataset(config=self.config, mode='train')
             self.valid_dataset = KnowAirDataset(config=self.config, mode='valid')
             self.test_dataset = KnowAirDataset(config=self.config, mode='test')
-            self.in_dim = self.train_dataset.feature.shape[-1] + self.train_dataset.pm25.shape[-1]
+            self.in_dim = (self.train_dataset.feature.shape[-1] +
+                           self.train_dataset.pm25.shape[-1] * self.config.hist_len)
             self.city_num = self.train_dataset.node_num
             self.edge_index = self.train_dataset.edge_index
             self.edge_attr = self.train_dataset.edge_attr
@@ -195,7 +171,7 @@ class Trainer:
         elif self.config.model_name == 'GAGNN':
             return GAGNN(self.config.hist_len,
                          self.config.pred_len,
-                         self.in_dim-self.train_dataset.pm25.shape[-1],
+                         self.in_dim-self.train_dataset.pm25.shape[-1]*self.config.hist_len,
                          self.city_num,
                          self.config.batch_size,
                          self.device,
@@ -287,12 +263,20 @@ class Trainer:
         return test_loss, predict_epoch, label_epoch
 
     def _create_records(self):
+        """
+        Create the records directory for experiments
+        :return:
+        """
         exp_datetime = arrow.now().format('YYYYMMDDHHmmss')
         self.record_dir = os.path.join(self.config.records_dir, f'{self.config.model_name}_{exp_datetime}')
         if not os.path.exists(self.record_dir):
             os.makedirs(self.record_dir)
 
     def run(self):
+        """
+        do experiment training
+        :return:
+        """
         # save config file
         try:
             shutil.copy(self.config.config_path, os.path.join(self.record_dir, 'config.yaml'))
@@ -330,7 +314,7 @@ class Trainer:
                 val_loss = self._valid(valid_loader)
                 self.logger.info('train_loss: %.4f, val_loss: %.4f' % (train_loss, val_loss))
                 # End train without the best result in consecutive early_stop epochs
-                if epoch - best_epoch > self.config.early_stop:
+                if epoch - best_epoch > self.config.early_stop and self.config.is_early_stop:
                     break
                 # update val loss
                 if val_loss < val_loss_min:

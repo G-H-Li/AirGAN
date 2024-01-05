@@ -23,8 +23,10 @@ experiment:
   test_end: [ [ 2018, 12, 31 ], GMT ]
   # progress setting
   save_npy: True
-  # model setting, optional: ARIMA, MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirGAN
-  model_name: GAGNN
+  is_early_stop: True
+  early_stop: 10
+  # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, AirGAN
+  model_name: PM25_GNN
 
 # general hyperparameters setting
 general_hyper_params:
@@ -33,9 +35,8 @@ general_hyper_params:
   batch_size: 32
   epochs: 50
   exp_times: 1
-  weight_decay: 0.01
-  lr: 0.01
-  early_stop: 10
+  weight_decay: 0.0005
+  lr: 0.0005
 # model hyperparameters setting
 model_hyper_params:
   group_num: 15

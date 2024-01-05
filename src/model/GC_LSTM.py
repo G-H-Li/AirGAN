@@ -32,7 +32,7 @@ class GC_LSTM(nn.Module):
         hn = h0
         c0 = torch.zeros(self.batch_size * self.city_num, self.hid_dim).to(self.device)
         cn = c0
-        xn = pm25_hist[:, -1]
+        xn = pm25_hist.reshape(pm25_hist.shape[0], pm25_hist.shape[2], -1)
         for i in range(self.pred_len):
             x = torch.cat((xn, feature[:, self.hist_len+i]), dim=-1)
             x_gcn = x.contiguous()
@@ -41,10 +41,10 @@ class GC_LSTM(nn.Module):
             x_gcn = x_gcn.view(self.batch_size, self.city_num, -1)
             x = torch.cat((x, x_gcn), dim=-1)
             hn, cn = self.lstm_cell(x, (hn, cn))
-            xn = hn.view(self.batch_size, self.city_num, self.hid_dim)
-            xn = self.fc_out(xn)
-            pm25_pred.append(xn)
-
+            pred = hn.view(self.batch_size, self.city_num, self.hid_dim)
+            pred = self.fc_out(pred)
+            pm25_pred.append(pred)
+            xn = torch.cat((xn[:, :, 1:], pred), dim=-1)
         pm25_pred = torch.stack(pm25_pred, dim=1)
 
         return pm25_pred
