@@ -23,7 +23,7 @@ def batch_input(x, edge_w, edge_index):
 
 class GAGNN(nn.Module):
     def __init__(self, hist_len, pred_len, in_dim, city_num, batch_size, device, edge_index, edge_attr,
-                 city_loc, group_num):
+                 city_loc, group_num, gnn_hidden, gnn_layer, edge_hidden, head_nums):
         super(GAGNN, self).__init__()
 
         self.device = device
@@ -37,16 +37,17 @@ class GAGNN(nn.Module):
         self.edge_w = torch.Tensor(np.float32(edge_attr[:, 0])).to(self.device)
 
         self.in_dim = in_dim
-        self.edge_h = 12
-        self.gnn_layer = 2
-        self.gnn_h = 32
+        self.edge_h = edge_hidden
+        self.gnn_layer = gnn_layer
+        self.gnn_h = gnn_hidden
+        self.head_nums = head_nums
         self.x_em = 32
         self.loc_em = 12
         self.date_em = 4
 
         self.w = Parameter(torch.randn(city_num, group_num).to(device, non_blocking=True), requires_grad=True)
 
-        self.encoder = TransformerEncoderLayer(self.in_dim, nhead=4, dim_feedforward=256)
+        self.encoder = TransformerEncoderLayer(self.in_dim, nhead=self.head_nums, dim_feedforward=256)
         self.x_embed = Lin(self.hist_len * self.in_dim, self.x_em)
         self.loc_embed = Lin(2, self.loc_em)
         self.u_embed1 = nn.Embedding(12, self.date_em)  # month
@@ -90,9 +91,9 @@ class GAGNN(nn.Module):
         g_x = torch.bmm(w1, x_loc)
 
         # group gnn
-        u_month = time_feature[:, -1].to(torch.int32).squeeze() - 1
-        u_day = time_feature[:, -2].to(torch.int32).squeeze() - 1
-        u_hour = time_feature[:, -3].to(torch.int32).squeeze()
+        u_month = time_feature[..., 2].to(torch.int32).squeeze() - 1
+        u_day = time_feature[..., 1].to(torch.int32).squeeze() - 1
+        u_hour = time_feature[..., 0].to(torch.int32).squeeze()
         u_em1 = self.u_embed1(u_month)
         u_em2 = self.u_embed2(u_day)
         u_em3 = self.u_embed3(u_hour)

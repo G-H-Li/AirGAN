@@ -1,0 +1,22 @@
+# general hyperparameters setting
+general_hyper_params:
+  hist_len: 8
+  pred_len: 24
+  batch_size: 32
+  epochs: 50
+  exp_times: 1
+  weight_decay: 0.0005
+  lr: 0.0005
+  is_early_stop: True
+  early_stop: 10
+# model hyperparameters setting
+model_hyper_params:
+  # 1: normalize, 2: embedding
+  feature_process: [ 1, 1, 1, 1, 2, 2, 2, 1, 1 ]
+  GAGNN:
+    group_num: 15
+    weight_rate: 50
+    gnn_hidden: 32
+    gnn_layer: 2
+    edge_hidden: 12
+    head_nums: 2

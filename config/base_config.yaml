@@ -3,18 +3,17 @@ experiment:
   device: cuda
   # dataset setting
   dataset_name: KnowAir
-  used_meteo_params: ['2m_temperature',
-               'k_index',
+  used_feature_params: ['2m_temperature',
                'relative_humidity+950',
                'surface_pressure',
                'total_precipitation',
-               'u_component_of_wind+950',
-               'v_component_of_wind+950',
                'hour',
                'weekday',
                'month',
                'wind_speed',
                'wind_direction']
+  # 1: normalize, 2: embedding
+  feature_process: [ 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
   train_start: [ [ 2015, 1, 1 ], GMT ]
   train_end: [ [ 2016, 12, 31 ], GMT ]
   valid_start: [ [ 2017, 1, 1 ], GMT ]
@@ -23,24 +22,8 @@ experiment:
   test_end: [ [ 2018, 12, 31 ], GMT ]
   # progress setting
   save_npy: True
-  is_early_stop: True
-  early_stop: 10
   # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, AirGAN
   model_name: PM25_GNN
-
-# general hyperparameters setting
-general_hyper_params:
-  hist_len: 8
-  pred_len: 24
-  batch_size: 32
-  epochs: 50
-  exp_times: 1
-  weight_decay: 0.0005
-  lr: 0.0005
-# model hyperparameters setting
-model_hyper_params:
-  group_num: 15
-  weight_rate: 50
 
 # general filepath
 filepath:
@@ -55,7 +38,7 @@ KnowAir:
   data_end: [ [ 2018, 12, 31, 21, 0 ], GMT ]
   time_span_hour: 3
   city_num: 184
-  meteo_params:
+  feature_params:
     ['100m_u_component_of_wind',
      '100m_v_component_of_wind',
      '2m_dewpoint_temperature',
@@ -78,13 +61,13 @@ KnowAir:
      'month',
      'wind_speed',
      'wind_direction']
-GAGNN:
+CityAir:
   data_start: [ [ 2017, 1, 1, 0, 0 ], GMT ]
   data_end: [ [ 2019, 4, 30, 12, 0 ], GMT ]
   time_span_hour: 1
   city_num: 209
   # Currently don't know the order of parameters and the specific meaning of a parameter
-  meteo_params:
+  feature_params:
     ['humidity',
      'rainfall',
      'air_pressure',

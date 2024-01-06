@@ -193,8 +193,8 @@ class KnowAirFeatureAndPm25:
         np.save(os.path.join(config.dataset_dir, 'KnowAir_pm25.npy'), self.pm25)
 
     def _process_feature(self, config):
-        meteo_var = config.meteo_params
-        meteo_use = config.meteo_params
+        meteo_var = config.feature_params
+        meteo_use = config.feature_params
         meteo_idx = [meteo_var.index(var) for var in meteo_use]
         self.feature = self.feature[:, :, meteo_idx]
 

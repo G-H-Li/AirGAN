@@ -4,22 +4,22 @@ import os
 import torch
 
 from torch.utils import data
-from torch_geometric.utils import to_dense_adj
 
 from src.utils.config import Config, get_time
+from src.utils.scaler import StandardScaler
 
 
-class GAGNNDataset(data.Dataset):
+class CityAirDataset(data.Dataset):
     # TODO 尚未针对配置文件进行GAGNN数据读取适配
     def __init__(self, config: Config, mode: str = 'train'):
         if mode not in ['train', 'val', 'test']:
             raise ValueError(f'Invalid mode: {mode}')
-        self.x = np.load(os.path.join(config.dataset_dir, f'GAGNN_{mode}_x.npy'), allow_pickle=True)
-        self.u = np.load(os.path.join(config.dataset_dir, f'GAGNN_{mode}_u.npy'), allow_pickle=True)
-        self.y = np.load(os.path.join(config.dataset_dir, f'GAGNN_{mode}_y.npy'), allow_pickle=True)
-        self.edge_w = np.load(os.path.join(config.dataset_dir, 'GAGNN_edge_w.npy'), allow_pickle=True)
-        self.edge_index = np.load(os.path.join(config.dataset_dir, 'GAGNN_edge_index.npy'), allow_pickle=True)
-        self.loc = np.load(os.path.join(config.dataset_dir, 'GAGNN_loc_filled.npy'), allow_pickle=True)
+        self.x = np.load(os.path.join(config.dataset_dir, f'CityAir_{mode}_x.npy'), allow_pickle=True)
+        self.u = np.load(os.path.join(config.dataset_dir, f'CityAir_{mode}_u.npy'), allow_pickle=True)
+        self.y = np.load(os.path.join(config.dataset_dir, f'CityAir_{mode}_y.npy'), allow_pickle=True)
+        self.edge_w = np.load(os.path.join(config.dataset_dir, 'CityAir_edge_w.npy'), allow_pickle=True)
+        self.edge_index = np.load(os.path.join(config.dataset_dir, 'CityAir_edge_index.npy'), allow_pickle=True)
+        self.loc = np.load(os.path.join(config.dataset_dir, 'CityAir_loc_filled.npy'), allow_pickle=True)
         self.loc = self.loc.astype(np.float64)
 
     def __getitem__(self, index):
@@ -63,11 +63,11 @@ class KnowAirDataset(data.Dataset):
         # sequence data general preprocess, consider the history data
         seq_len = config.hist_len + config.pred_len
         self._add_time_dim(seq_len)
-        self._norm()
-
-    def _norm(self):
-        self.feature = (self.feature - self.feature_mean) / self.feature_std
-        self.pm25 = (self.pm25 - self.pm25_mean) / self.pm25_std
+        # data preprocess
+        self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
+        self.feature_scaler = StandardScaler(mean=self.feature_mean, std=self.feature_std)
+        self.pm25 = self.pm25_scaler.normalize(self.pm25)
+        self.feature = self.feature_scaler.normalize(self.feature)
 
     def _add_time_dim(self, seq_len):
         def _add_t(arr, seq_length):
@@ -92,12 +92,14 @@ class KnowAirDataset(data.Dataset):
         self.pm25_std = self.pm25.std()
 
     def _process_feature(self, config):
-        meteo_var = config.meteo_params
-        meteo_use = config.used_meteo_params
-        meteo_idx = [meteo_var.index(var) for var in meteo_use]
-        self.feature = self.feature[:, :, meteo_idx]
-        time_feature = self.feature[:, :, -5:-2]
-        self.time_feature = np.unique(time_feature, axis=1).squeeze()
+        feature_var = config.feature_params
+        feature_use = config.used_feature_params
+        norm_feature = [feature_use[i] for i in range(len(config.feature_process)) if config.feature_process[i] == 1]
+        em_feature = [feature_use[i] for i in range(len(config.feature_process)) if config.feature_process[i] == 2]
+        norm_feature_idx = [feature_var.index(var) for var in norm_feature]
+        em_feature_idx = [feature_var.index(var) for var in em_feature]
+        self.embedding_feature = np.unique(self.feature[:, :, em_feature_idx], axis=1).squeeze()
+        self.feature = self.feature[:, :, norm_feature_idx]
 
     def _process_time(self, config, mode):
         self.start_time = get_time(config.__getattribute__(f'{mode}_start'))
@@ -117,7 +119,7 @@ class KnowAirDataset(data.Dataset):
         return len(self.pm25)
 
     def __getitem__(self, index):
-        return self.pm25[index], self.feature[index], self.time_feature[index]
+        return self.pm25[index], self.feature[index], self.embedding_feature[index]
 
 
 if __name__ == '__main__':

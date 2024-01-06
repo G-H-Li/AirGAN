@@ -8,7 +8,7 @@ import arrow
 # current file path
 current_directory = os.path.dirname(__file__)
 # config file's relative path
-relative_path = '..\\..\\config.yaml'
+relative_path = '../../config/'
 # construct the config file complete path
 config_complete_path = os.path.join(current_directory, relative_path)
 
@@ -23,13 +23,23 @@ class Config(object):
     Configuration class
     Use to read the config
     """
-    def __init__(self, config_path: str = config_complete_path):
-        self.config_path = config_path
+    def __init__(self, config_path: str = config_complete_path, config_filename: str = 'base_config.yaml'):
+        self.config_path = os.path.join(config_path, config_filename)
+        # read general config
         with open(self.config_path) as f:
-            self.config = yaml.load(f, Loader=yaml.FullLoader)
-        if self.config is None:
+            self.base_config = yaml.load(f, Loader=yaml.FullLoader)
+        if self.base_config is None:
             sys.exit("No config file found")
         self._read_experiment_config()
+        # read model hyperparameters
+        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN']:
+            self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
+            with open(self.model_config_path) as f:
+                self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)
+            if self.hyperparameters is None:
+                sys.exit("No model config file found")
+        else:
+            raise ValueError('Unknown model')
         self._read_filepath_config()
         self._read_data_info_config()
         self._read_hyper_params_config()
@@ -40,11 +50,14 @@ class Config(object):
         Read experiment config
         :return:
         """
-        experiment_config = self.config['experiment']
+        experiment_config = self.base_config['experiment']
         self.device = experiment_config['device']
         # dataset setting
         self.dataset_name = experiment_config['dataset_name']
-        self.used_meteo_params = experiment_config['used_meteo_params']
+        self.used_feature_params = experiment_config['used_feature_params']
+        self.feature_process = experiment_config['feature_process']
+        if len(self.used_feature_params) != len(self.feature_process):
+            raise ValueError('feature_process and used_feature_params length do not match')
         self.train_start = experiment_config['train_start']
         self.train_end = experiment_config['train_end']
         self.test_start = experiment_config['test_start']
@@ -53,8 +66,6 @@ class Config(object):
         self.valid_end = experiment_config['valid_end']
         # progress setting
         self.save_npy = experiment_config['save_npy']
-        self.is_early_stop = experiment_config['is_early_stop']
-        self.early_stop = experiment_config['early_stop']
         # model setting
         self.model_name = experiment_config['model_name']
 
@@ -63,7 +74,9 @@ class Config(object):
         Read general hyperparameter config
         :return:
         """
-        hyper_params_config = self.config['general_hyper_params']
+        hyper_params_config = self.hyperparameters['general_hyper_params']
+        self.is_early_stop = hyper_params_config['is_early_stop']
+        self.early_stop = hyper_params_config['early_stop']
         self.hist_len = hyper_params_config['hist_len']
         self.pred_len = hyper_params_config['pred_len']
         self.batch_size = hyper_params_config['batch_size']
@@ -77,12 +90,29 @@ class Config(object):
         Read model hyperparameter config
         :return:
         """
-        if self.model_name is None:
-            raise ValueError('Config model_name not exists')
-        model_params_config = self.config['model_hyper_params']
+        if 'model_hyper_params' not in self.hyperparameters:
+            return None
+        model_params_config = self.hyperparameters['model_hyper_params']
+        if 'feature_process' not in model_params_config:
+            # if model config exist feature process, use model config
+            self.feature_process = model_params_config['feature_process']
+            if len(self.used_feature_params) != len(self.feature_process):
+                raise ValueError('feature_process and used_feature_params length do not match')
         if self.model_name == 'GAGNN':
-            self.group_num = model_params_config['group_num']
-            self.weight_rate = model_params_config['weight_rate']
+            config = model_params_config['GAGNN']
+            self.group_num = config['group_num']
+            self.weight_rate = config['weight_rate']
+            self.gnn_hidden = config['gnn_hidden']
+            self.gnn_layer = config['gnn_layer']
+            self.edge_hidden = config['edge_hidden']
+            self.head_nums = config['head_nums']
+        elif self.model_name == 'AirFormer':
+            config = model_params_config['AirFormer']
+            self.dropout = config['dropout']
+            self.hidden_channels = config['hidden_channels']
+            self.head_nums = config['head_nums']
+            self.steps = config['steps']
+            self.blocks = config['blocks']
 
     def _read_data_info_config(self):
         """
@@ -91,13 +121,13 @@ class Config(object):
         """
         if self.dataset_name is None:
             raise ValueError('Config dataset_name not exists')
-        dataset_info = self.config[self.dataset_name]
+        dataset_info = self.base_config[self.dataset_name]
         if dataset_info is None:
             raise ValueError(f'Dataset {self.dataset_name} info not exists')
         self.data_start = dataset_info['data_start']
         self.data_end = dataset_info['data_end']
         self.city_num = dataset_info['city_num']
-        self.meteo_params = dataset_info['meteo_params']
+        self.feature_params = dataset_info['feature_params']
 
     def _read_filepath_config(self):
         """
@@ -108,7 +138,7 @@ class Config(object):
             node_name = 'Local'
         else:
             node_name = os.uname().nodename
-        file_dir = self.config['filepath'][node_name]
+        file_dir = self.base_config['filepath'][node_name]
         self.dataset_dir = file_dir['dataset_dir']
         self.records_dir = file_dir['records_dir']
         self.results_dir = file_dir['results_dir']

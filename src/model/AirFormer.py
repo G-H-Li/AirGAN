@@ -13,22 +13,25 @@ class AirEmbedding(nn.Module):
     """
     Embed categorical variables.
     """
-
     def __init__(self):
         super(AirEmbedding, self).__init__()
-        self.embed_wdir = nn.Embedding(11, 3)
-        self.embed_weather = nn.Embedding(18, 4)
-        self.embed_day = nn.Embedding(24,
-                                      3)  # a typo here but doesn't affect the results. this layer is actually for embedding 24 hours.
-        self.embed_hour = nn.Embedding(7,
-                                       5)  # a typo here but doesn't affect the results. this layer is actually for embedding 7 days.
+        # because KnowAir dataset's wind_direction feature is not category and weather feature do not exist
+        # self.embed_wdir = nn.Embedding(11, 3)
+        # self.embed_weather = nn.Embedding(18, 4)
+        # a typo here but doesn't affect the results. this layer is actually for embedding 24 hours.
+        self.embed_hour = nn.Embedding(24,
+                                       3)
+        # a typo here but doesn't affect the results. this layer is actually for embedding 7 days.
+        self.embed_weekday = nn.Embedding(7,
+                                          5)
 
     def forward(self, x):
-        x_wdir = self.embed_wdir(x[..., 0])
-        x_weather = self.embed_weather(x[..., 1])
-        x_day = self.embed_day(x[..., 2])
-        x_hour = self.embed_hour(x[..., 3])
-        out = torch.cat((x_wdir, x_weather, x_day, x_hour), -1)
+        # x_wdir = self.embed_wdir(x[..., 0])
+        # x_weather = self.embed_weather(x[..., 1])
+        x_hour = self.embed_hour(x[..., 2])
+        x_day = self.embed_weekday(x[..., 3])
+        # out = torch.cat((x_wdir, x_weather, x_day, x_hour), -1)
+        out = torch.cat((x_hour, x_day), -1)
         return out
 
 
@@ -123,98 +126,87 @@ class StochasticModel(nn.Module):
         return z, mus, sigmas
 
 
-class AirFormer(BaseModel):
+class AirFormer:
     """
     the AirFormer model
     """
 
-    def __init__(self,
-                 dropout=0.3,  # dropout rate
-                 spatial_flag=True,  # whether to use DS-MSA
-                 stochastic_flag=True,  # whether to use latent vairables
-                 hidden_channels=32,  # hidden dimension
-                 end_channels=512,  # the decoder dimension
-                 blocks=4,  # the number of stacked AirFormer blocks
-                 mlp_expansion=2,  # the mlp expansion rate in transformers
-                 num_heads=2,  # the number of heads
-                 dartboard=0,  # the type of dartboard
-                 **args):
-        super(AirFormer, self).__init__(**args)
+    def __init__(self, hist_len, pred_len, in_dim, city_num, batch_size, device,
+                 dropout, head_nums, hidden_channels, blocks):
         self.dropout = dropout
-        self.blocks = blocks
-        self.spatial_flag = spatial_flag
-        self.stochastic_flag = stochastic_flag
+        self.in_dim = in_dim
+        self.head_nums = head_nums
+        self.hidden_channels = hidden_channels
+        self.end_channels = hidden_channels * 8
+        self.device = device
+        self.hist_len = hist_len
+        self.pred_len = pred_len
+        self.city_num = city_num
+        self.batch_size = batch_size
+        self.blocks = blocks  # the number of stacked AirFormer blocks
+
         self.residual_convs = nn.ModuleList()
         self.skip_convs = nn.ModuleList()
         self.bn = nn.ModuleList()
         self.s_modules = nn.ModuleList()
         self.t_modules = nn.ModuleList()
         self.embedding_air = AirEmbedding()
-        self.alpha = 10  # the coefficient of kl loss
 
-        self.get_dartboard_info(dartboard)
+        self.alpha = 10  # the coefficient of kl loss
+        self.dartboard = 0
+        self.mlp_expansion = 2
+
+        self.assignment, self.mask = self.get_dartboard_info(self.dartboard)
 
         # a conv for converting the input to the embedding
-        self.start_conv = nn.Conv2d(in_channels=self.input_dim,
-                                    out_channels=hidden_channels,
+        self.start_conv = nn.Conv2d(in_channels=self.in_dim,
+                                    out_channels=self.hidden_channels,
                                     kernel_size=(1, 1))
 
-        for b in range(blocks):
-            window_size = self.seq_len // 2 ** (blocks - b - 1)
-            self.t_modules.append(CT_MSA(hidden_channels,
+        for b in range(self.blocks):
+            window_size = self.hist_len // 2 ** (self.blocks - b - 1)
+            self.t_modules.append(CT_MSA(self.hidden_channels,
                                          depth=1,
-                                         heads=num_heads,
+                                         heads=self.head_nums,
                                          window_size=window_size,
-                                         mlp_dim=hidden_channels * mlp_expansion,
-                                         num_time=self.seq_len, device=self.device))
+                                         mlp_dim=self.hidden_channels * self.mlp_expansion,
+                                         num_time=self.hist_len, device=self.device))
 
-            if self.spatial_flag:
-                self.s_modules.append(DS_MSA(hidden_channels,
-                                             depth=1,
-                                             heads=num_heads,
-                                             mlp_dim=hidden_channels * mlp_expansion,
-                                             assignment=self.assignment,
-                                             mask=self.mask,
-                                             dropout=dropout))
-            else:
-                self.residual_convs.append(nn.Conv1d(in_channels=hidden_channels,
-                                                     out_channels=hidden_channels,
-                                                     kernel_size=(1, 1)))
+            self.s_modules.append(DS_MSA(hidden_channels,
+                                         depth=1,
+                                         heads=self.head_nums,
+                                         mlp_dim=self.hidden_channels * self.mlp_expansion,
+                                         assignment=self.assignment,
+                                         mask=self.mask,
+                                         dropout=self.dropout))
 
             self.bn.append(nn.BatchNorm2d(hidden_channels))
 
-        # create the generrative and inference model
-        if stochastic_flag:
-            self.generative_model = StochasticModel(
-                hidden_channels, hidden_channels, blocks)
-            self.inference_model = StochasticModel(
-                hidden_channels, hidden_channels, blocks)
+        # create the generative and inference model
+        self.generative_model = StochasticModel(
+            self.hidden_channels, self.hidden_channels, self.blocks)
+        self.inference_model = StochasticModel(
+            self.hidden_channels, self.hidden_channels, self.blocks)
 
-            self.reconstruction_model = \
-                nn.Sequential(nn.Conv2d(in_channels=hidden_channels * blocks,
-                                        out_channels=end_channels,
-                                        kernel_size=(1, 1),
-                                        bias=True),
-                              nn.ReLU(inplace=True),
-                              nn.Conv2d(in_channels=end_channels,
-                                        out_channels=self.input_dim,
-                                        kernel_size=(1, 1),
-                                        bias=True)
-                              )
+        self.reconstruction_model = \
+            nn.Sequential(nn.Conv2d(in_channels=self.hidden_channels * self.blocks,
+                                    out_channels=self.end_channels,
+                                    kernel_size=(1, 1),
+                                    bias=True),
+                          nn.ReLU(inplace=True),
+                          nn.Conv2d(in_channels=self.end_channels,
+                                    out_channels=self.in_dim,
+                                    kernel_size=(1, 1),
+                                    bias=True)
+                          )
 
         # create the decoder layers
-        if self.stochastic_flag:
-            self.end_conv_1 = nn.Conv2d(in_channels=hidden_channels * blocks * 2,
-                                        out_channels=end_channels,
-                                        kernel_size=(1, 1),
-                                        bias=True)
-        else:
-            self.end_conv_1 = nn.Conv2d(in_channels=hidden_channels * blocks,
-                                        out_channels=end_channels,
-                                        kernel_size=(1, 1),
-                                        bias=True)
-        self.end_conv_2 = nn.Conv2d(in_channels=end_channels,
-                                    out_channels=self.horizon * self.output_dim,
+        self.end_conv_1 = nn.Conv2d(in_channels=self.hidden_channels * self.blocks * 2,
+                                    out_channels=self.end_channels,
+                                    kernel_size=(1, 1),
+                                    bias=True)
+        self.end_conv_2 = nn.Conv2d(in_channels=self.end_channels,
+                                    out_channels=self.pred_len,
                                     kernel_size=(1, 1),
                                     bias=True)
 
@@ -226,11 +218,11 @@ class AirFormer(BaseModel):
                           dartboard_map[dartboard] + '/assignment.npy'
         path_mask = 'data/local_partition/' + \
                     dartboard_map[dartboard] + '/mask.npy'
-        print(path_assignment)
-        self.assignment = torch.from_numpy(
+        assignment = torch.from_numpy(
             np.load(path_assignment)).float().to(self.device)
-        self.mask = torch.from_numpy(
+        mask = torch.from_numpy(
             np.load(path_mask)).bool().to(self.device)
+        return assignment, mask
 
     def forward(self, inputs, supports=None):
         """
@@ -245,10 +237,7 @@ class AirFormer(BaseModel):
         x = self.start_conv(x)
         d = []  # deterministic states
         for i in range(self.blocks):
-            if self.spatial_flag:
-                x = self.s_modules[i](x)
-            else:
-                x = self.residual_convs[i](x)
+            x = self.s_modules[i](x)
 
             x = self.t_modules[i](x)  # [b, c, n, t]
 
@@ -257,50 +246,40 @@ class AirFormer(BaseModel):
 
         d = torch.stack(d)  # [num_blocks, b, c, n, t]
 
-        # generatation and inference
-        if self.stochastic_flag:
-            d_shift = [(nn.functional.pad(d[i], pad=(1, 0))[..., :-1])
-                       for i in range(len(d))]
-            d_shift = torch.stack(d_shift)  # [num_blocks, b, c, n, t]
-            z_p, mu_p, sigma_p = self.generative_model(
-                d_shift)  # run the generative model
-            z_q, mu_q, sigma_q = self.inference_model(
-                d)  # run the inference model
+        # generation and inference
+        d_shift = [(nn.functional.pad(d[i], pad=(1, 0))[..., :-1])
+                   for i in range(len(d))]
+        d_shift = torch.stack(d_shift)  # [num_blocks, b, c, n, t]
+        z_p, mu_p, sigma_p = self.generative_model(
+            d_shift)  # run the generative model
+        z_q, mu_q, sigma_q = self.inference_model(
+            d)  # run the inference model
 
-            # compute kl divergence loss
-            p = torch.distributions.Normal(mu_p, sigma_p)
-            q = torch.distributions.Normal(mu_q, sigma_q)
-            kl_loss = torch.distributions.kl_divergence(
-                q, p).mean() * self.alpha
+        # compute kl divergence loss
+        p = torch.distributions.Normal(mu_p, sigma_p)
+        q = torch.distributions.Normal(mu_q, sigma_q)
+        kl_loss = torch.distributions.kl_divergence(
+            q, p).mean() * self.alpha
 
-            # reshaping
-            num_blocks, B, C, N, T = d.shape
-            z_p = z_p.permute(1, 0, 2, 3, 4).reshape(
-                B, -1, N, T)  # [B, num_blocks*C, N, T]
-            z_q = z_q.permute(1, 0, 2, 3, 4).reshape(
-                B, -1, N, T)  # [B, num_blocks*C, N, T]
+        # reshaping
+        num_blocks, B, C, N, T = d.shape
+        z_p = z_p.permute(1, 0, 2, 3, 4).reshape(
+            B, -1, N, T)  # [B, num_blocks*C, N, T]
+        z_q = z_q.permute(1, 0, 2, 3, 4).reshape(
+            B, -1, N, T)  # [B, num_blocks*C, N, T]
 
-            # reconstruction
-            x_rec = self.reconstruction_model(z_p)  # [b, c, n, t]
-            x_rec = x_rec.permute(0, 3, 2, 1)
+        # reconstruction
+        x_rec = self.reconstruction_model(z_p)  # [b, c, n, t]
+        x_rec = x_rec.permute(0, 3, 2, 1)
 
-            # prediction
-            num_blocks, B, C, N, T = d.shape
-            d = d.permute(1, 0, 2, 3, 4).reshape(
-                B, -1, N, T)  # [B, num_blocks*C, N, T]
-            x_hat = torch.cat([d[..., -1:], z_q[..., -1:]], dim=1)
-            x_hat = F.relu(self.end_conv_1(x_hat))
-            x_hat = self.end_conv_2(x_hat)
-            return x_hat, x_rec, kl_loss
-
-        else:
-            num_blocks, B, C, N, T = d.shape
-            d = d.permute(1, 0, 2, 3, 4).reshape(
-                B, -1, N, T)  # [B, num_blocks*C, N, T]
-            x_hat = F.relu(d[..., -1:])
-            x_hat = F.relu(self.end_conv_1(x_hat))
-            x_hat = self.end_conv_2(x_hat)
-            return x_hat
+        # prediction
+        num_blocks, B, C, N, T = d.shape
+        d = d.permute(1, 0, 2, 3, 4).reshape(
+            B, -1, N, T)  # [B, num_blocks*C, N, T]
+        x_hat = torch.cat([d[..., -1:], z_q[..., -1:]], dim=1)
+        x_hat = F.relu(self.end_conv_1(x_hat))
+        x_hat = self.end_conv_2(x_hat)
+        return x_hat, x_rec, kl_loss
 
 
 class SpatialAttention(nn.Module):

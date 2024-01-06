@@ -5,10 +5,12 @@ import arrow
 import numpy as np
 import torch
 from torch import nn
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.dataset.parser import KnowAirDataset
+from src.model.AirFormer import AirFormer
 from src.model.GAGNN import GAGNN
 from src.model.GC_LSTM import GC_LSTM
 from src.model.GRU import GRU
@@ -47,6 +49,7 @@ class Trainer:
         # train setting
         self.criterion = self._get_criterion()
         self.optimizer = self._get_optimizer()
+        self.scheduler = self._get_scheduler()
         # result save list
         self.train_loss_list = []
         self.test_loss_list = []
@@ -101,6 +104,8 @@ class Trainer:
         """
         if self.config.model_name == "GAGNN":
             return nn.L1Loss(reduction='sum')
+        elif self.config.model_name == "AirFormer":
+            return nn.L1Loss()
         else:
             return nn.MSELoss()
 
@@ -116,15 +121,29 @@ class Trainer:
                 if pname == 'w':
                     w_params += [p]
             params_id = list(map(id, w_params))
-            other_params = list(filter(lambda p: id(p) not in params_id, all_params))
+            other_params = list(filter(lambda i: id(i) not in params_id, all_params))
             return torch.optim.Adam([
                 {'params': other_params},
                 {'params': w_params, 'lr': self.config.lr * self.config.weight_rate}
             ], lr=self.config.lr, weight_decay=self.config.weight_decay)
+        elif self.config.model_name == "AirFormer":
+            return torch.optim.Adam(self.model.parameters(), lr=self.config.lr)
         else:
             return torch.optim.RMSprop(self.model.parameters(),
                                        lr=self.config.lr,
                                        weight_decay=self.config.weight_decay)
+
+    def _get_scheduler(self):
+        """
+        define the scheduler
+        :return:
+        """
+        if self.config.model_name == "AirFormer":
+            return MultiStepLR(optimizer=self.optimizer,
+                               milestones=self.config.steps,
+                               gamma=self.config.weight_decay)
+        else:
+            return None
 
     def _get_model(self):
         """
@@ -178,7 +197,22 @@ class Trainer:
                          self.edge_index,
                          self.edge_attr,
                          self.city_loc,
-                         self.config.group_num)
+                         self.config.group_num,
+                         self.config.gnn_hidden,
+                         self.config.gnn_layer,
+                         self.config.edge_hidden,
+                         self.config.head_nums)
+        elif self.config.model_name == 'AirFormer':
+            return AirFormer(self.config.hist_len,
+                             self.config.pred_len,
+                             self.in_dim,
+                             self.city_num,
+                             self.config.batch_size,
+                             self.device,
+                             self.config.dropout,
+                             self.config.head_nums,
+                             self.config.hidden_channels,
+                             self.config.blocks)
         else:
             self.logger.error('Unsupported model name')
             raise Exception('Wrong model name')
@@ -192,13 +226,13 @@ class Trainer:
         train_loss = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            pm25, feature, time_feature = data
+            pm25, feature, em_feature = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
-            time_feature = time_feature.to(self.device)
+            em_feature = em_feature.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature, time_feature)
+            pm25_pred = self.model(pm25_hist, feature, em_feature)
             loss = self.criterion(pm25_pred, pm25_label)
             loss.backward()
             self.optimizer.step()
@@ -248,10 +282,8 @@ class Trainer:
             loss = self.criterion(pm25_pred, pm25_label)
             test_loss += loss.item()
 
-            pm25_pred_val = (
-                    np.concatenate([pm25_hist.cpu().detach().numpy(), pm25_pred.cpu().detach().numpy()], axis=1)
-                    * self.pm25_std + self.pm25_mean)
-            pm25_label_val = pm25.cpu().detach().numpy() * self.pm25_std + self.pm25_mean
+            pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
+            pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())
             predict_list.append(pm25_pred_val)
             label_list.append(pm25_label_val)
 
@@ -279,8 +311,10 @@ class Trainer:
         """
         # save config file
         try:
-            shutil.copy(self.config.config_path, os.path.join(self.record_dir, 'config.yaml'))
-            self.logger.debug('config.yaml copied')
+            shutil.copy(self.config.config_path, os.path.join(self.record_dir, 'base_config.yaml'))
+            shutil.copy(self.config.model_config_path, os.path.join(self.record_dir,
+                                                                    f'{self.config.model_name}_config.yaml'))
+            self.logger.debug('base_config.yaml copied')
         except IOError as e:
             self.logger.error(f'Error copying config file: {e}')
         self.logger.debug('Start experiment...')
@@ -297,7 +331,6 @@ class Trainer:
             test_loader = DataLoader(self.test_dataset, batch_size=self.config.batch_size, shuffle=False,
                                      drop_last=True)
             # epoch variants
-            val_loss_min = np.inf
             best_epoch = 0
             self.train_loss_list = []
             self.test_loss_list = []
@@ -317,13 +350,8 @@ class Trainer:
                 if epoch - best_epoch > self.config.early_stop and self.config.is_early_stop:
                     break
                 # update val loss
-                if val_loss < val_loss_min:
-                    val_loss_min = val_loss
+                if val_loss < np.min(self.valid_loss_list):
                     best_epoch = epoch
-                    torch.save(self.model.state_dict(),
-                               os.path.join(exp_dir, f'model_{self.config.model_name}.pth'))
-                    self.logger.info(f'Save best model at epoch {epoch}, val_loss: {val_loss}')
-
                     # test model
                     test_loss, predict_epoch, label_epoch = self._test(test_loader)
                     rmse, mae, csi, pod, far = get_metrics(predict_epoch, label_epoch)
@@ -341,6 +369,16 @@ class Trainer:
                     self.csi_list.append(csi)
                     self.pod_list.append(pod)
                     self.far_list.append(far)
+                    # save model
+                    torch.save(self.model.state_dict(),
+                               os.path.join(exp_dir, f'model_{self.config.model_name}.pth'))
+                    # save prediction and label
+                    if self.config.save_npy:
+                        np.save(os.path.join(exp_dir, f'predict.npy'), predict_epoch)
+                        np.save(os.path.join(exp_dir, f'label.npy'), label_epoch)
+                        self.logger.info(f'Save model and results at epoch {epoch}')
+                    else:
+                        self.logger.info(f'Save model at epoch {epoch}')
 
             self.logger.info('Experiment time: %d, test results: \n'
                              'Train loss: %0.4f, Val loss: %0.4f, Test loss: %0.4f \n'
