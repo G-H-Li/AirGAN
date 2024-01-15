@@ -348,6 +348,8 @@ class Trainer:
                 self.logger.info('train_loss: %.4f, val_loss: %.4f' % (train_loss, val_loss))
                 # End train without the best result in consecutive early_stop epochs
                 if epoch - best_epoch > self.config.early_stop and self.config.is_early_stop:
+                    self.logger.info('Early stop at epoch {}, best loss = {:.6f}'
+                                     .format(epoch, np.min(self.valid_loss_list)))
                     break
                 # update val loss
                 if val_loss < np.min(self.valid_loss_list):
