@@ -23,7 +23,7 @@ experiment:
   # progress setting
   save_npy: True
   # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, AirGAN
-  model_name: PM25_GNN
+  model_name: GAGNN
 
 # general filepath
 filepath:

@@ -3,7 +3,7 @@ from torch_geometric.nn import ChebConv
 import torch
 from torch import nn
 
-from src.model.Cells import LSTMCell
+from src.model.Cells_RNN import LSTMCell
 
 
 class GC_LSTM(nn.Module):

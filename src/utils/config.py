@@ -93,7 +93,7 @@ class Config(object):
         if 'model_hyper_params' not in self.hyperparameters:
             return None
         model_params_config = self.hyperparameters['model_hyper_params']
-        if 'feature_process' not in model_params_config:
+        if 'feature_process' in model_params_config:
             # if model config exist feature process, use model config
             self.feature_process = model_params_config['feature_process']
             if len(self.used_feature_params) != len(self.feature_process):
@@ -113,6 +113,11 @@ class Config(object):
             self.head_nums = config['head_nums']
             self.steps = config['steps']
             self.blocks = config['blocks']
+        elif self.model_name == 'AECGAN':
+            config = model_params_config['AECGAN']
+            self.hidden_dim = config['hidden_dim']
+            self.use_ec = config['use_ec']
+            self.noise_type = config['noise_type']
 
     def _read_data_info_config(self):
         """

@@ -30,6 +30,7 @@ class GAGNN(nn.Module):
         self.city_num = city_num
         self.group_num = group_num
         self.pred_len = pred_len
+        self.out_dim = pred_len
         self.city_loc = torch.Tensor(np.float32(city_loc)).to(self.device)
         self.hist_len = hist_len
         self.batch_size = batch_size
@@ -65,7 +66,7 @@ class GAGNN(nn.Module):
         self.decoder = DecoderModule(self.x_em, self.edge_h, self.gnn_h, self.gnn_layer, city_num, group_num, device)
         self.predMLP = Seq(Lin(self.gnn_h, 16),
                            ReLU(inplace=True),
-                           Lin(16, self.pred_len),
+                           Lin(16, self.out_dim),
                            ReLU(inplace=True))
 
     def forward(self, pm25_hist, feature, time_feature):
@@ -139,8 +140,7 @@ class GAGNN(nn.Module):
         new_x = self.decoder(new_x, self.w, g_edge_index, g_edge_w, edge_index, edge_w)
         res = self.predMLP(new_x)
         res = res.unsqueeze(dim=-1)
-        res = res.reshape(-1, self.pred_len, self.city_num, res.shape[-1])
-
+        res = res.reshape(-1, self.out_dim, self.city_num, res.shape[-1])
         return res
 
 
