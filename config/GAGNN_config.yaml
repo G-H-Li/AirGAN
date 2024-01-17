@@ -7,7 +7,7 @@ general_hyper_params:
   exp_times: 1
   weight_decay: 0.001
   lr: 0.001
-  is_early_stop: True
+  is_early_stop: False
   early_stop: 10
 # model hyperparameters setting
 model_hyper_params:
