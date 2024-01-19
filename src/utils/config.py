@@ -32,7 +32,7 @@ class Config(object):
             sys.exit("No config file found")
         self._read_experiment_config()
         # read model hyperparameters
-        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN']:
+        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN', 'CW_GAN']:
             self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
             with open(self.model_config_path) as f:
                 self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)
@@ -68,6 +68,8 @@ class Config(object):
         self.save_npy = experiment_config['save_npy']
         # model setting
         self.model_name = experiment_config['model_name']
+        # train seed
+        self.seed = experiment_config['seed']
 
     def _read_hyper_params_config(self):
         """
@@ -118,6 +120,10 @@ class Config(object):
             self.hidden_dim = config['hidden_dim']
             self.use_ec = config['use_ec']
             self.noise_type = config['noise_type']
+        elif self.model_name == 'CW_GAN':
+            config = model_params_config['CW_GAN']
+            self.critic_iters = config['critic_iters']
+            self.hidden_dim = config['hidden_dim']
 
     def _read_data_info_config(self):
         """

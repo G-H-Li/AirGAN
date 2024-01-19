@@ -16,7 +16,7 @@ class Trainer(object):
         self._create_records()
         self.logger = TrainLogger(os.path.join(self.record_dir, 'progress.log')).logger
         # cuda setting
-        torch.set_num_threads(1)
+        self._set_seed()
         self.device = self._choose_device()
         # data setting
         self._read_data()
@@ -39,6 +39,10 @@ class Trainer(object):
         self.exp_csi_list = []
         self.exp_pod_list = []
         self.exp_far_list = []
+
+    def _set_seed(self):
+        if self.config.seed is not 0:
+            torch.manual_seed(self.config.seed)
 
     def _create_records(self):
         """

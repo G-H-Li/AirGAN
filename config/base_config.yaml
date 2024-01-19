@@ -23,7 +23,9 @@ experiment:
   # progress setting
   save_npy: True
   # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, AirGAN
-  model_name: GAGNN
+  model_name: CW_GAN
+  # train seed, 0 means random
+  seed: 1
 
 # general filepath
 filepath:
