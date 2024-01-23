@@ -29,7 +29,7 @@ def cal_loc_correlation(city_loc, edge_index, edge_attr) -> Tuple[list, list]:
     city_cor_idx_dict: Dict[int, any] = dict()
     for i in range(city_loc.shape[0]):
         idx = np.where(edge_index == i)
-        edge_attr_cor_idx = idx[1][:idx[1].size//2]
+        edge_attr_cor_idx = idx[1][:idx[1].size // 2]
         edge_index_cor = edge_index[1, edge_attr_cor_idx]
         edge_attr_cor = edge_attr[edge_attr_cor_idx, 0]
         min_cor_idx = np.argsort(edge_attr_cor)
@@ -61,66 +61,62 @@ def converse_st_graph(index_cor, data):
 
 
 class Generator(nn.Module):
-    def __init__(self, hist_len, pred_len, in_dim, hidden_dim, conditional_dim,
-                 feature_channels, batch_size):
+    def __init__(self, hist_len, pred_len, hidden_dim, feature_channels, batch_size):
         super(Generator, self).__init__()
-        self.in_dim = in_dim
         self.hidden_dim = hidden_dim
         self.pred_len = pred_len
         self.hist_len = hist_len
-        self.conditional_dim = conditional_dim
         self.feature_channels = feature_channels
         self.batch_size = batch_size
 
-        preprocess1 = nn.Sequential(
-            nn.Conv2d(self.feature_channels + 2, 4 * 4 * 4 * self.hidden_dim, (33, 3)),
+        preprocess = nn.Sequential(
+            nn.Conv2d(self.feature_channels + 2, 4 * 4 * 4 * self.hidden_dim, (3, 4), padding=2, stride=(1, 2)),
             nn.ReLU(True),
-            nn.Conv2d(4 * 4 * 4 * self.hidden_dim, 4 * 4 * 4 * self.hidden_dim, (33, 3)),
+            nn.Conv2d(4 * 4 * 4 * self.hidden_dim, 4 * 4 * 4 * self.hidden_dim, (3, 4), padding=2, stride=(1, 2)),
             nn.ReLU(True),
         )
         block1 = nn.Sequential(
-            nn.ConvTranspose2d(4 * 4 * 4 * self.hidden_dim, 2 * self.hidden_dim, (16, 3)),
+            nn.ConvTranspose2d(4 * 4 * 4 * self.hidden_dim, 4 * self.hidden_dim, (2, 4), padding=2, stride=(1, 2)),
             nn.ReLU(True),
         )
         block2 = nn.Sequential(
-            nn.ConvTranspose2d(2 * self.hidden_dim, self.hidden_dim, (16, 3)),
+            nn.ConvTranspose2d(4 * self.hidden_dim, self.hidden_dim, (2, 4), padding=2, stride=(1, 2)),
             nn.ReLU(True),
         )
-        deconv_out = nn.ConvTranspose2d(self.hidden_dim, 1, (35, 3), stride=(1, 3))
+        deconv_out = nn.ConvTranspose2d(self.hidden_dim, 1, 5, padding=1)
 
         self.block1 = block1
         self.block2 = block2
         self.deconv_out = deconv_out
-        self.preprocess1 = preprocess1
-        self.sigmoid = nn.Sigmoid()
+        self.preprocess = preprocess
+        self.tanh = nn.Tanh()
 
     def forward(self, noise, condition):
         # noise: batch_size, city_num, hist_len, 1
         # condition: batch_size, city_num, hist_len, feature_num+pm25
         in_data = torch.cat((noise, condition), dim=-1)
-        in_data = in_data.reshape(self.batch_size, -1, in_data.shape[1], in_data.shape[2])
+        in_data = in_data.reshape(self.batch_size, -1, in_data.shape[2], in_data.shape[1])
         output = self.preprocess(in_data)
         output = self.block1(output)
         output = self.block2(output)
         output = self.deconv_out(output)
-        output = self.sigmoid(output)
-        return output
+        output = self.tanh(output)
+        return output.view(self.batch_size, in_data.shape[-1], in_data.shape[-2], -1)
 
 
 class Discriminator(nn.Module):
-    def __init__(self, feature_channels, hidden_dim, batch_size, conditional_dim):
+    def __init__(self, feature_channels, hidden_dim, batch_size):
         super(Discriminator, self).__init__()
         self.feature_channels = feature_channels
         self.hidden_dim = hidden_dim
         self.batch_size = batch_size
-        self.conditional_dim = conditional_dim
 
         self.model = nn.Sequential(
-            nn.Conv2d(2*(feature_channels+1), self.hidden_dim, 5, stride=2, padding=2),
+            nn.Conv2d(feature_channels + 2, self.hidden_dim, (2, 4), stride=(2, 4), padding=2),
             nn.ReLU(True),
-            nn.Conv2d(self.hidden_dim, 2 * self.hidden_dim, 5, stride=2, padding=2),
+            nn.Conv2d(self.hidden_dim, 2 * self.hidden_dim, (2, 4), stride=(2, 4), padding=2),
             nn.ReLU(True),
-            nn.Conv2d(2 * self.hidden_dim, 4 * self.hidden_dim, 5, stride=2, padding=2),
+            nn.Conv2d(2 * self.hidden_dim, 4 * self.hidden_dim, (2, 4), stride=(2, 4), padding=2),
             nn.ReLU(True),
         )
         self.output = nn.Linear(4 * 4 * 4 * self.hidden_dim, 1)
@@ -128,30 +124,28 @@ class Discriminator(nn.Module):
     def forward(self, st_graph, condition):
         # st_graph: batch_size, city_num, pred_len, pm25
         # condition: batch_size, city_num, hist_len, feature_num+pm25
-        st_graph = st_graph.repeat((-1, condition.shape[-1]))
         in_data = torch.cat((st_graph, condition), dim=-1)
-        in_data = in_data.reshape(self.batch_size, -1, in_data.shape[1], in_data.shape[2])
+        in_data = in_data.reshape(self.batch_size, -1, in_data.shape[2], in_data.shape[1])
         output = self.model(in_data)
         output = output.view(-1, 4 * 4 * 4 * self.hidden_dim)
         out = self.output(output)
-        return out
+        return out.squeeze()
 
 
 class CW_GAN(Base_GAN):
-    def __init__(self, config: Config, device: torch.device, edge_index, edge_attr, city_loc, in_dim: int,
-                 conditional_dim: int, feature_channels: int):
+    def __init__(self, config: Config, device: torch.device, edge_index, edge_attr, city_loc,
+                 feature_channels: int, logger):
         super(CW_GAN, self).__init__(config, device)
-
+        self.logger = logger
         self.city2st, self.st2city = cal_loc_correlation(city_loc, edge_index, edge_attr)
 
-        self.generator = Generator(self.config.hist_len, self.config.pred_len, in_dim,
-                                   self.config.hidden_dim, conditional_dim,
-                                   feature_channels, self.config.batch_size).to(device)
+        self.generator = Generator(self.config.hist_len, self.config.pred_len,
+                                   self.config.hidden_dim, feature_channels, self.config.batch_size).to(device)
         self.discriminator = Discriminator(feature_channels, self.config.hidden_dim,
-                                           self.config.batch_size, conditional_dim).to(device)
+                                           self.config.batch_size).to(device)
 
-        self.optimizerD = optim.Adam(self.discriminator.parameters(), lr=1e-4, betas=(0.5, 0.9))
-        self.optimizerG = optim.Adam(self.generator.parameters(), lr=1e-4, betas=(0.5, 0.9))
+        self.optimizerD = optim.Adam(self.discriminator.parameters(), lr=2e-4, betas=(0.5, 0.9))
+        self.optimizerG = optim.Adam(self.generator.parameters(), lr=2e-4, betas=(0.5, 0.9))
         self.criterion = nn.MSELoss()
 
     def batch_train(self, pm25_hist, feature_hist, pm25_labels):
@@ -165,7 +159,7 @@ class CW_GAN(Base_GAN):
         # converse data
         feature_hist = converse_st_graph(self.city2st, feature_hist)
         pm25_hist = converse_st_graph(self.city2st, pm25_hist)
-        pm25_labels = converse_st_graph(self.city2st, pm25_labels)
+        pm25_labels = converse_st_graph(self.city2st, pm25_labels).to(self.device)
         # train
         loss_d = 0
         real_labels = torch.ones(self.config.batch_size).to(self.device)
@@ -173,35 +167,39 @@ class CW_GAN(Base_GAN):
         conditionals = torch.cat((pm25_hist, feature_hist), dim=-1).to(self.device)
         # discriminator step
         for iter_d in range(self.config.critic_iters):
+            with torch.no_grad():
+                noise = torch.randn(self.config.batch_size, self.config.city_num, self.config.hist_len, 1).to(
+                    self.device)
+                fake_data = self.generator(noise, conditionals)
+
             toggle_grad(self.discriminator, True)
             self.discriminator.train()
-            self.optimizerD.zero_grad()
-
-            noise = torch.randn(self.config.batch_size, self.config.city_num, self.config.hist_len, 1).to(self.device)
-            fake_data = self.generator(noise, conditionals)
 
             res_real = self.discriminator(pm25_labels, conditionals)
-            loss_real = self.criterion(res_real, real_labels)
-
             res_fake = self.discriminator(fake_data, conditionals)
-            loss_fake = self.criterion(res_fake, fake_labels)
 
+            loss_real = self.criterion(res_real, real_labels)
+            loss_fake = self.criterion(res_fake, fake_labels)
             loss_d = loss_real + loss_fake
+            self.optimizerD.zero_grad()
             loss_d.backward()
             self.optimizerD.step()
 
+        torch.cuda.empty_cache()
         # generator step
         toggle_grad(self.generator, True)
+        toggle_grad(self.discriminator, False)
         self.generator.train()
-        self.optimizerG.zero_grad()
 
         noise = torch.randn(self.config.batch_size, self.config.city_num, self.config.hist_len, 1).to(self.device)
         fake_data = self.generator(noise, conditionals)
         output_fake = self.discriminator(fake_data, conditionals)
-        loss_g = self.criterion(output_fake, real_labels)
 
+        loss_g = self.criterion(output_fake, real_labels)
+        self.optimizerG.zero_grad()
         loss_g.backward()
         self.optimizerG.step()
+        # self.logger.debug("BATCH Loss D: %f, Loss G: %f" % (loss_d.item(), loss_g.item()))
         return loss_d, loss_g
 
     def batch_valid(self, pm25_hist, feature_hist, pm25_labels):
@@ -209,12 +207,13 @@ class CW_GAN(Base_GAN):
         # converse data
         feature_hist = converse_st_graph(self.city2st, feature_hist)
         pm25_hist = converse_st_graph(self.city2st, pm25_hist)
-        pm25_labels = converse_st_graph(self.city2st, pm25_labels)
+        pm25_labels = converse_st_graph(self.city2st, pm25_labels).to(self.device)
         # valid
         conditionals = torch.cat((pm25_hist, feature_hist), dim=-1).to(self.device)
         noise = torch.randn(self.config.batch_size, self.config.city_num, self.config.hist_len, 1).to(self.device)
         fake_data = self.generator(noise, conditionals)
         valid_loss = self.criterion(fake_data, pm25_labels)
+        # self.logger.debug("BATCH Valid loss: %f" % (valid_loss.item()))
         return valid_loss
 
     def batch_test(self, pm25_hist, feature_hist, pm25_labels):
@@ -222,14 +221,11 @@ class CW_GAN(Base_GAN):
         # converse data
         feature_hist = converse_st_graph(self.city2st, feature_hist)
         pm25_hist = converse_st_graph(self.city2st, pm25_hist)
-        pm25_labels = converse_st_graph(self.city2st, pm25_labels)
+        pm25_labels = converse_st_graph(self.city2st, pm25_labels).to(self.device)
         # test
         conditionals = torch.cat((pm25_hist, feature_hist), dim=-1).to(self.device)
         noise = torch.randn(self.config.batch_size, self.config.city_num, self.config.hist_len, 1).to(self.device)
         fake_data = self.generator(noise, conditionals)
         test_loss = self.criterion(fake_data, pm25_labels)
-
-        fake_data = converse_st_graph(self.st2city, fake_data)
-        pm25_labels = converse_st_graph(self.st2city, pm25_labels)
-
+        # self.logger.debug("BATCH Test loss: %f" % (test_loss.item()))
         return test_loss, fake_data, pm25_labels

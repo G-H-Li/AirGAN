@@ -31,10 +31,9 @@ class GAN_Trainer(Trainer):
         construct model
         :return: model object
         """
-        self.in_dim = (self.train_dataset.feature.shape[-1] +
-                       self.train_dataset.pm25.shape[-1] * self.config.hist_len)
         if self.config.model_name == 'CW_GAN':
-            return CW_GAN(self.config, self.device, self.edge_index, self.edge_attr, self.city_loc)
+            return CW_GAN(self.config, self.device, self.edge_index,
+                          self.edge_attr, self.city_loc, self.train_dataset.feature.shape[-1], self.logger)
         else:
             self.logger.error('Unsupported model name')
             raise Exception('Wrong model name')
