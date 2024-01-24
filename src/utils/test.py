@@ -6,6 +6,9 @@ import torch
 from netCDF4 import Dataset
 
 from src.utils.config import Config
+import scipy.sparse as sp
+
+from src.utils.utils import load_pickle
 
 
 def load_air_former_data():
@@ -28,5 +31,22 @@ def load_nc():
     np.save(os.path.join(Config().dataset_dir, 'europe_pm25.npy'), pm25)
 
 
+def asym_adj(adj):
+    """Asymmetrically normalize adjacency matrix."""
+    adj = sp.coo_matrix(adj)
+    rowsum = np.array(adj.sum(1)).flatten()
+    d_inv = np.power(rowsum, -1).flatten()
+    d_inv[np.isinf(d_inv)] = 0.
+    d_mat = sp.diags(d_inv)
+    return d_mat.dot(adj).astype(np.float32).todense()
+
+
+def load_adj():
+    nc = os.path.join(Config().dataset_dir, 'adj_mx.pkl')
+    sensor_ids, sensor_id_to_ind, adj_mx = load_pickle(nc)
+    return [asym_adj(adj_mx), asym_adj(np.transpose(adj_mx))]
+
+
 if __name__ == '__main__':
-    load_nc()
+    predefined_A = load_adj()
+    predefined_A = [torch.tensor(adj) for adj in predefined_A]

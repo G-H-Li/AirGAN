@@ -124,6 +124,17 @@ class Config(object):
             config = model_params_config['CW_GAN']
             self.critic_iters = config['critic_iters']
             self.hidden_dim = config['hidden_dim']
+        elif self.model_name == 'DGCRN':
+            config = model_params_config['DGCRN']
+            self.rnn_size = config['rnn_size']
+            self.dropout = config['dropout']
+            self.gnn_dim = config['gnn_dim']
+            self.prop_alpha = config['prop_alpha']
+            self.gcn_depth = config['gcn_depth']
+            self.clip = config['clip']
+            self.tanh_alpha = config['tanh_alpha']
+            self.step_size = config['step_size']
+            self.node_dim = config['node_dim']
 
     def _read_data_info_config(self):
         """

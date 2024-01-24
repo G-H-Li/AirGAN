@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from src.dataset.parser import KnowAirDataset
 from src.model.AirFormer import AirFormer
+from src.model.DGCRN import DGCRN
 from src.model.GAGNN import GAGNN
 from src.model.GC_LSTM import GC_LSTM
 from src.model.GRU import GRU
@@ -159,6 +160,22 @@ class STTrainer(Trainer):
                              self.config.head_nums,
                              self.config.hidden_channels,
                              self.config.blocks)
+        elif self.config.model_name == 'DGCRN':
+            return DGCRN(self.config.gcn_pred_len,
+                         self.city_num,
+                         self.device,
+                         self.static_graph,  # TODO
+                         self.config.dropout,
+                         self.config.node_dim,
+                         2,
+                         self.config.hist_len,
+                         self.in_dim,
+                         self.config.pred_len,
+                         [0.05, 0.95, 0.95],
+                         self.config.tanh_alpha,
+                         4000,
+                         self.config.rnn_size,
+                         self.config.gnn_dim)
         else:
             self.logger.error('Unsupported model name')
             raise Exception('Wrong model name')

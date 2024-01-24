@@ -17,7 +17,7 @@ def pickle_it(obj, filename):
 
 def load_pickle(filename):
     with open(filename, 'rb') as f:
-        return pickle.load(f)
+        return pickle.load(f, encoding='iso-8859-1')
 
 
 def to_numpy(x):
