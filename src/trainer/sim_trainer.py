@@ -1,184 +1,59 @@
-import os.path
+import os
 import shutil
 
 import numpy as np
 import torch
 from torch import nn
-from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.dataset.parser import KnowAirDataset
-from src.model.AirFormer import AirFormer
-from src.model.DGCRN import DGCRN
-from src.model.GAGNN import GAGNN
-from src.model.GC_LSTM import GC_LSTM
-from src.model.GRU import GRU
-from src.model.LSTM import LSTM
-from src.model.MLP import MLP
-from src.model.PM25_GNN import PM25_GNN
+from src.dataset.parser import SimParser
+from src.model.SimST import SimST
 from src.trainer.trainer import Trainer
 from src.utils.metrics import get_metrics
 from src.utils.utils import get_mean_std
 
 
-class STTrainer(Trainer):
-    """
-    Trainer class
-    General purpose training:
-    1. load setting
-    2. load dataset
-    3. train model
-    4. test model
-    """
+class SimTrainer(Trainer):
     def __init__(self):
-        super().__init__()
-        # model setting
+        super(SimTrainer, self).__init__()
         self.model = self._get_model()
         self.model = self.model.to(self.device)
         # train setting
         self.criterion = self._get_criterion()
         self.optimizer = self._get_optimizer()
-        self.scheduler = self._get_scheduler()
 
-    def _get_criterion(self):
+    def _read_data(self):
         """
-        define the loss function
-        :return:
+        construct train, valid, and test dataset
+        :return: dataset loader
         """
-        if self.config.model_name == "GAGNN":
-            return nn.L1Loss(reduction='sum')
-        elif self.config.model_name == "AirFormer":
-            return nn.L1Loss()
+        if self.config.dataset_name == 'KnowAir':
+            self.train_dataset = SimParser(config=self.config, mode='train')
+            self.valid_dataset = SimParser(config=self.config, mode='valid')
+            self.test_dataset = SimParser(config=self.config, mode='test')
+            self.city_num = self.train_dataset.node_num
         else:
-            return nn.MSELoss()
-
-    def _get_optimizer(self):
-        """
-        define the optimizer function
-        :return:
-        """
-        if self.config.model_name == "GAGNN":
-            all_params = self.model.parameters()
-            w_params = []
-            for pname, p in self.model.named_parameters():
-                if pname == 'w':
-                    w_params += [p]
-            params_id = list(map(id, w_params))
-            other_params = list(filter(lambda i: id(i) not in params_id, all_params))
-            return torch.optim.Adam([
-                {'params': other_params},
-                {'params': w_params, 'lr': self.config.lr * self.config.weight_rate}
-            ], lr=self.config.lr, weight_decay=self.config.weight_decay)
-        elif self.config.model_name == "AirFormer":
-            return torch.optim.Adam(self.model.parameters(), lr=self.config.lr)
-        else:
-            return torch.optim.RMSprop(self.model.parameters(),
-                                       lr=self.config.lr,
-                                       weight_decay=self.config.weight_decay)
-
-    def _get_scheduler(self):
-        """
-        define the scheduler
-        :return:
-        """
-        if self.config.model_name == "AirFormer":
-            return MultiStepLR(optimizer=self.optimizer,
-                               milestones=self.config.steps,
-                               gamma=self.config.weight_decay)
-        else:
-            return None
+            self.logger.error("Unsupported dataset type")
+            raise ValueError('Unknown dataset')
 
     def _get_model(self):
-        """
-        construct model
-        :return: model object
-        """
-        self.in_dim = (self.train_dataset.feature.shape[-1] +
-                       self.train_dataset.pm25.shape[-1] * self.config.hist_len)
-        if self.config.model_name == 'MLP':
-            return MLP(self.config.hist_len,
-                       self.config.pred_len,
-                       self.in_dim)
-        elif self.config.model_name == 'LSTM':
-            return LSTM(self.config.hist_len,
-                        self.config.pred_len,
-                        self.in_dim,
-                        self.city_num,
-                        self.config.batch_size,
-                        self.device)
-        elif self.config.model_name == 'GRU':
-            return GRU(self.config.hist_len,
-                       self.config.pred_len,
-                       self.in_dim,
-                       self.city_num,
-                       self.config.batch_size,
-                       self.device)
-        elif self.config.model_name == 'GC_LSTM':
-            return GC_LSTM(self.config.hist_len,
-                           self.config.pred_len,
-                           self.in_dim,
-                           self.city_num,
-                           self.config.batch_size,
-                           self.device,
-                           self.edge_index)
-        elif self.config.model_name == 'PM25_GNN':
-            return PM25_GNN(self.config.hist_len,
-                            self.config.pred_len,
-                            self.in_dim,
-                            self.city_num,
-                            self.config.batch_size,
-                            self.device,
-                            self.edge_index,
-                            self.edge_attr,
-                            self.wind_mean,
-                            self.wind_std)
-        elif self.config.model_name == 'GAGNN':
-            self.in_dim = self.train_dataset.feature.shape[-1]
-            return GAGNN(self.config.hist_len,
+        self.in_dim = self.train_dataset.feature.shape[-1]
+        if self.config.model_name == 'SimST':
+            return SimST(self.config.hist_len,
                          self.config.pred_len,
-                         self.in_dim,
-                         self.city_num,
+                         self.device,
                          self.config.batch_size,
-                         self.device,
-                         self.edge_index,
-                         self.edge_attr,
-                         self.city_loc,
-                         self.config.group_num,
-                         self.config.gnn_hidden,
-                         self.config.gnn_layer,
-                         self.config.edge_hidden,
-                         self.config.head_nums)
-        elif self.config.model_name == 'AirFormer':
-            return AirFormer(self.config.hist_len,
-                             self.config.pred_len,
-                             self.in_dim,
-                             self.city_num,
-                             self.config.batch_size,
-                             self.device,
-                             self.config.dropout,
-                             self.config.head_nums,
-                             self.config.hidden_channels,
-                             self.config.blocks)
-        elif self.config.model_name == 'DGCRN':
-            return DGCRN(self.config.gcn_pred_len,
-                         self.city_num,
-                         self.device,
-                         self.static_graph,  # TODO
-                         self.config.dropout,
-                         self.config.node_dim,
-                         2,
-                         self.config.hist_len,
                          self.in_dim,
-                         self.config.pred_len,
-                         [0.05, 0.95, 0.95],
-                         self.config.tanh_alpha,
-                         4000,
-                         self.config.rnn_size,
-                         self.config.gnn_dim)
+                         self.config.hidden_dim,
+                         self.city_num,
+                         self.config.city_em_dim,
+                         self.config.dropout,
+                         self.config.gru_layers,
+                         self.config.k)
         else:
             self.logger.error('Unsupported model name')
-            raise Exception('Wrong model name')
+            raise NotImplementedError
 
     def _train(self, train_loader):
         """
@@ -189,15 +64,16 @@ class STTrainer(Trainer):
         train_loss = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            pm25, feature, em_feature = data
+            pm25, feature, idx = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
-            em_feature = em_feature.to(self.device)
+            # em_feature = em_feature.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature, em_feature)
+            pm25_pred = self.model(pm25_hist, feature, idx)
             loss = self.criterion(pm25_pred, pm25_label)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.clip)
             self.optimizer.step()
             train_loss += loss.item()
 
@@ -212,13 +88,13 @@ class STTrainer(Trainer):
         self.model.eval()
         val_loss = 0
         for batch_idx, data in tqdm(enumerate(valid_loader)):
-            pm25, feature, time_feature = data
+            pm25, feature, idx = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
-            time_feature = time_feature.to(self.device)
+            # time_feature = time_feature.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature, time_feature)
+            pm25_pred = self.model(pm25_hist, feature, idx)
             loss = self.criterion(pm25_pred, pm25_label)
             val_loss += loss.item()
 
@@ -235,13 +111,13 @@ class STTrainer(Trainer):
         label_list = []
         test_loss = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
-            pm25, feature, time_feature = data
+            pm25, feature, idx = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
-            time_feature = time_feature.to(self.device)
+            # time_feature = time_feature.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature, time_feature)
+            pm25_pred = self.model(pm25_hist, feature, idx)
             loss = self.criterion(pm25_pred, pm25_label)
             test_loss += loss.item()
 
@@ -256,6 +132,17 @@ class STTrainer(Trainer):
         label_epoch = np.concatenate(label_list, axis=0)
         predict_epoch[predict_epoch < 0] = 0
         return test_loss, predict_epoch, label_epoch
+
+    def _get_criterion(self):
+        """
+        define the loss function
+        :return:
+        """
+        return nn.MSELoss()
+
+    def _get_optimizer(self):
+        return torch.optim.Adam(self.model.parameters(),
+                                lr=self.config.lr, weight_decay=self.config.weight_decay)
 
     def run(self):
         """
@@ -310,7 +197,7 @@ class STTrainer(Trainer):
                     best_epoch = epoch
                     # test model
                     test_loss, predict_epoch, label_epoch = self._test(test_loader)
-                    rmse, mae, csi, pod, far = get_metrics(predict_epoch, label_epoch)
+                    rmse, mae, csi, pod, far = get_metrics(predict_epoch, label_epoch, predict_mode='sim')
 
                     self.logger.info('Epoch time: %d, test results: \n'
                                      'Train loss: %0.4f, Val loss: %0.4f, Test loss: %0.4f \n'

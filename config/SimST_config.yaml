@@ -1,0 +1,22 @@
+# general hyperparameters setting
+general_hyper_params:
+  hist_len: 24
+  pred_len: 8
+  batch_size: 1024
+  epochs: 150
+  exp_times: 1
+  weight_decay: 0.0001
+  lr: 0.001
+  is_early_stop: False
+  early_stop: 10
+# model hyperparameters setting
+model_hyper_params:
+  # 1: normalize, 2: embedding
+  feature_process: [ 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
+  SimST:
+    hidden_dim: 64
+    city_em_dim: 20
+    k: 3
+    dropout: 0.1
+    clip: 5
+    gru_layers: 2

@@ -32,7 +32,7 @@ class Config(object):
             sys.exit("No config file found")
         self._read_experiment_config()
         # read model hyperparameters
-        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN', 'CW_GAN']:
+        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN', 'CW_GAN', 'SimST']:
             self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
             with open(self.model_config_path) as f:
                 self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)
@@ -135,6 +135,14 @@ class Config(object):
             self.tanh_alpha = config['tanh_alpha']
             self.step_size = config['step_size']
             self.node_dim = config['node_dim']
+        elif self.model_name == 'SimST':
+            config = model_params_config['SimST']
+            self.hidden_dim = config['hidden_dim']
+            self.k = config['k']
+            self.city_em_dim = config['city_em_dim']
+            self.dropout = config['dropout']
+            self.clip = config['clip']
+            self.gru_layers = config['gru_layers']
 
     def _read_data_info_config(self):
         """

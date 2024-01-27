@@ -83,7 +83,7 @@ class GAN_Trainer(Trainer):
         predict_list = []
         label_list = []
         test_loss = 0
-        for batch_idx, data in enumerate(test_loader):
+        for batch_idx, data in tqdm(enumerate(test_loader)):
             pm25, feature, em_feature = data
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]

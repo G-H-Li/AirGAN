@@ -6,7 +6,7 @@ import torch
 from typing import Tuple
 
 
-def get_metrics(predict_epoch, label_epoch):
+def get_metrics(predict_epoch, label_epoch, predict_mode='city'):
     haze_threshold = 75
     predict_haze = predict_epoch >= haze_threshold
     predict_clear = predict_epoch < haze_threshold
@@ -18,8 +18,12 @@ def get_metrics(predict_epoch, label_epoch):
     csi = hit / (hit + falsealarm + miss)
     pod = hit / (hit + miss)
     far = falsealarm / (hit + falsealarm)
-    predict = predict_epoch[:, :, :, 0].transpose((0, 2, 1))
-    label = label_epoch[:, :, :, 0].transpose((0, 2, 1))
+    if predict_mode == "sim":
+        predict = predict_epoch[:, :, 0]
+        label = label_epoch[:, :, 0]
+    else:
+        predict = predict_epoch[:, :, :, 0].transpose((0, 2, 1))
+        label = label_epoch[:, :, :, 0].transpose((0, 2, 1))
     predict = predict.reshape((-1, predict.shape[-1]))
     label = label.reshape((-1, label.shape[-1]))
     mae = np.mean(np.mean(np.abs(predict - label), axis=1))
