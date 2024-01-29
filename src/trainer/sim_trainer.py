@@ -64,13 +64,14 @@ class SimTrainer(Trainer):
         train_loss = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            pm25, feature, idx = data
+            pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
-            # em_feature = em_feature.to(self.device)
+            emb_feature = emb_feature.int().to(self.device)
+            locs = locs.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature, idx)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
             loss = self.criterion(pm25_pred, pm25_label)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.clip)
@@ -88,13 +89,14 @@ class SimTrainer(Trainer):
         self.model.eval()
         val_loss = 0
         for batch_idx, data in tqdm(enumerate(valid_loader)):
-            pm25, feature, idx = data
+            pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
-            # time_feature = time_feature.to(self.device)
+            emb_feature = emb_feature.int().to(self.device)
+            locs = locs.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature, idx)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
             loss = self.criterion(pm25_pred, pm25_label)
             val_loss += loss.item()
 
@@ -111,13 +113,14 @@ class SimTrainer(Trainer):
         label_list = []
         test_loss = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
-            pm25, feature, idx = data
+            pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
-            # time_feature = time_feature.to(self.device)
+            emb_feature = emb_feature.int().to(self.device)
+            locs = locs.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
-            pm25_pred = self.model(pm25_hist, feature, idx)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
             loss = self.criterion(pm25_pred, pm25_label)
             test_loss += loss.item()
 
@@ -165,11 +168,11 @@ class SimTrainer(Trainer):
                 os.makedirs(exp_dir)
             # create data loader
             train_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True,
-                                      drop_last=True)
+                                      drop_last=True, pin_memory=True, num_workers=6)
             valid_loader = DataLoader(self.valid_dataset, batch_size=self.config.batch_size, shuffle=False,
-                                      drop_last=True)
+                                      drop_last=True, pin_memory=True, num_workers=6)
             test_loader = DataLoader(self.test_dataset, batch_size=self.config.batch_size, shuffle=False,
-                                     drop_last=True)
+                                     drop_last=True, pin_memory=True, num_workers=6)
             # epoch variants
             best_epoch = 0
             self.train_loss_list = []

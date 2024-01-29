@@ -41,7 +41,7 @@ class Trainer(object):
         self.exp_far_list = []
 
     def _set_seed(self):
-        if self.config.seed is not 0:
+        if self.config.seed != 0:
             torch.manual_seed(self.config.seed)
 
     def _create_records(self):

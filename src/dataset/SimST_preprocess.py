@@ -102,7 +102,8 @@ class SimSTGraph:
         return weight_adj
 
     def get_norm_wighted_adjacency_matrix(self):
-        mat = self.weight_adj_matrix  # 原文是mat + 单位矩阵,为了保留自身权重，但是此处self.weight_adj_matrix,已经包含了单位矩阵值
+        unit_m = np.eye(self.weight_adj_matrix.shape[0])
+        mat = self.weight_adj_matrix - unit_m  # 原文是mat + 单位矩阵,为了保留自身权重，但是此处self.weight_adj_matrix,已经包含了单位矩阵值
         degrees = np.sum(mat, axis=1)
         degree_matrix = np.diag(degrees)
 

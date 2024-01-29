@@ -5,6 +5,8 @@ experiment:
   dataset_name: KnowAir
   used_feature_params: ['2m_temperature',
                'relative_humidity+950',
+               'boundary_layer_height',
+               'k_index',
                'surface_pressure',
                'total_precipitation',
                'hour',
@@ -13,7 +15,7 @@ experiment:
                'wind_speed',
                'wind_direction']
   # 1: normalize, 2: embedding
-  feature_process: [ 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
+  feature_process: [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
   train_start: [ [ 2015, 1, 1 ], GMT ]
   train_end: [ [ 2016, 12, 31 ], GMT ]
   valid_start: [ [ 2017, 1, 1 ], GMT ]
@@ -22,10 +24,10 @@ experiment:
   test_end: [ [ 2018, 12, 31 ], GMT ]
   # progress setting
   save_npy: True
-  # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, AirGAN
+  # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, AirGAN，SimST
   model_name: SimST
   # train seed, 0 means random
-  seed: 1
+  seed: 0
 
 # general filepath
 filepath:

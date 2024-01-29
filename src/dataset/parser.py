@@ -127,6 +127,7 @@ class SimParser(data.Dataset):
         if mode not in ['train', 'valid', 'test']:
             raise ValueError(f'Invalid mode: {mode}')
         self.k = config.k
+        self.nodes = np.load(os.path.join(config.dataset_dir, 'KnowAir_loc_filled.npy'))
         self.feature = np.load(os.path.join(config.dataset_dir, 'KnowAir_feature.npy'))
         self.pm25 = np.load(os.path.join(config.dataset_dir, 'KnowAir_pm25.npy'))
         self.adj_weighted = np.load(os.path.join(config.dataset_dir, 'KnowAir_weighted_adj.npy'))
@@ -139,12 +140,23 @@ class SimParser(data.Dataset):
         # data preprocess
         self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
         self.feature_scaler = StandardScaler(mean=self.feature_mean, std=self.feature_std)
+        self.loc_scaler = StandardScaler(mean=self.loc_mean, std=self.loc_std)
         self.pm25 = self.pm25_scaler.normalize(self.pm25)
         self.feature = self.feature_scaler.normalize(self.feature)
+        self.loc = self.loc_scaler.normalize(self.nodes)
+
         self.idx = [np.arange(self.node_num) for _ in range(self.pm25.shape[0])]
         self.idx = np.stack(self.idx, axis=0)
-
         self.idx = np.reshape(self.idx, (-1, 1))
+
+        self.locs = [self.loc for _ in range(self.pm25.shape[0])]
+        self.locs = np.stack(self.locs, axis=0)
+        self.locs = np.reshape(self.locs, (-1, self.locs.shape[-1]))
+
+        self.embedding_feature = [self.embedding_feature for _ in range(self.node_num)]
+        self.embedding_feature = np.stack(self.embedding_feature, axis=1)
+        self.embedding_feature = self.embedding_feature.reshape((-1, seq_len, self.embedding_feature.shape[-1]))
+
         self.pm25 = np.transpose(self.pm25, axes=(0, 2, 1, 3)).reshape((-1, seq_len, self.pm25.shape[-1]))
         self.feature = np.transpose(self.feature, axes=(0, 2, 1, 3)).reshape((-1, seq_len, self.feature.shape[-1]))
 
@@ -185,12 +197,15 @@ class SimParser(data.Dataset):
 
         self.pm25 = _add_t(self.pm25, seq_len)
         self.feature = _add_t(self.feature, seq_len)
+        self.embedding_feature = _add_t(self.embedding_feature, seq_len)
 
     def _calc_mean_std(self):
         self.feature_mean = self.feature.mean(axis=(0, 1))
         self.feature_std = self.feature.std(axis=(0, 1))
         self.pm25_mean = self.pm25.mean()
         self.pm25_std = self.pm25.std()
+        self.loc_mean = self.nodes.mean(axis=0)
+        self.loc_std = self.nodes.std(axis=0)
 
     def __len__(self):
         return len(self.pm25)
@@ -210,7 +225,7 @@ class SimParser(data.Dataset):
         feature += feature_close
         feature.append(feature_aug)
         feature = np.stack(feature, axis=0)
-        return self.pm25[index], feature, self.idx[index]
+        return self.pm25[index], feature, self.locs[index], self.embedding_feature[index]
 
 
 if __name__ == '__main__':
