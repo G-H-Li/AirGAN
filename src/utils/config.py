@@ -70,6 +70,8 @@ class Config(object):
         self.model_name = experiment_config['model_name']
         # train seed
         self.seed = experiment_config['seed']
+        # data loader worker num
+        self.num_workers = experiment_config['num_workers']
 
     def _read_hyper_params_config(self):
         """

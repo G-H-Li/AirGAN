@@ -1,6 +1,6 @@
 # general hyperparameters setting
 general_hyper_params:
-  hist_len: 24
+  hist_len: 8
   pred_len: 8
   batch_size: 32
   epochs: 100

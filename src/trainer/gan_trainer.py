@@ -21,8 +21,8 @@ class GAN_Trainer(Trainer):
     3. train model
     4. test model
     """
-    def __init__(self):
-        super().__init__()
+    def __init__(self, mode):
+        super().__init__(mode)
         # model setting
         self.model = self._get_model()
 
@@ -124,11 +124,11 @@ class GAN_Trainer(Trainer):
                 os.makedirs(exp_dir)
             # create data loader
             train_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True,
-                                      drop_last=True)
+                                      drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
             valid_loader = DataLoader(self.valid_dataset, batch_size=self.config.batch_size, shuffle=False,
-                                      drop_last=True)
+                                      drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
             test_loader = DataLoader(self.test_dataset, batch_size=self.config.batch_size, shuffle=False,
-                                     drop_last=True)
+                                     drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
             # epoch variants
             best_epoch = 0
             self.train_loss_list = []

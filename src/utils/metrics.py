@@ -6,7 +6,7 @@ import torch
 from typing import Tuple
 
 
-def get_metrics(predict_epoch, label_epoch, predict_mode='city'):
+def get_metrics(predict_epoch, label_epoch, predict_mode='group'):
     haze_threshold = 75
     predict_haze = predict_epoch >= haze_threshold
     predict_clear = predict_epoch < haze_threshold
@@ -18,7 +18,7 @@ def get_metrics(predict_epoch, label_epoch, predict_mode='city'):
     csi = hit / (hit + falsealarm + miss)
     pod = hit / (hit + miss)
     far = falsealarm / (hit + falsealarm)
-    if predict_mode == "sim":
+    if predict_mode == "city":
         predict = predict_epoch[:, :, 0]
         label = label_epoch[:, :, 0]
     else:

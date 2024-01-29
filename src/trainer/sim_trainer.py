@@ -1,24 +1,24 @@
 import os
-import shutil
+from time import time
 
 import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
+from torchinfo import summary
 from tqdm import tqdm
 
 from src.dataset.parser import SimParser
 from src.model.SimST import SimST
 from src.trainer.trainer import Trainer
-from src.utils.metrics import get_metrics
-from src.utils.utils import get_mean_std
 
 
 class SimTrainer(Trainer):
-    def __init__(self):
-        super(SimTrainer, self).__init__()
+    def __init__(self, mode):
+        super(SimTrainer, self).__init__(mode)
         self.model = self._get_model()
         self.model = self.model.to(self.device)
+        self.predict_mode = "city"
         # train setting
         self.criterion = self._get_criterion()
         self.optimizer = self._get_optimizer()
@@ -55,6 +55,24 @@ class SimTrainer(Trainer):
             self.logger.error('Unsupported model name')
             raise NotImplementedError
 
+    def get_model_info(self):
+        data_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True,
+                                 drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
+        for data in data_loader:
+            pm25, feature, locs, emb_feature = data
+            pm25 = pm25.to(self.device)
+            feature = feature.to(self.device)
+            emb_feature = emb_feature.int().to(self.device)
+            locs = locs.to(self.device)
+            pm25_hist = pm25[:, :self.config.hist_len]
+            model_stat = summary(self.model, input_data=[pm25_hist, feature, locs, emb_feature], verbose=0,
+                                 batch_dim=self.config.batch_size,
+                                 col_names=["input_size", "output_size", "num_params", "params_percent",
+                                            "kernel_size", "mult_adds", "trainable"])
+
+            self.logger.info(model_stat)
+            break
+
     def _train(self, train_loader):
         """
         Train model
@@ -62,6 +80,7 @@ class SimTrainer(Trainer):
         """
         self.model.train()
         train_loss = 0
+        cost_time = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
             pm25, feature, locs, emb_feature = data
@@ -71,15 +90,21 @@ class SimTrainer(Trainer):
             locs = locs.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
+
+            start_time = time()
             pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
+            end_time = time()
+
             loss = self.criterion(pm25_pred, pm25_label)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.clip)
             self.optimizer.step()
             train_loss += loss.item()
+            cost_time += ((end_time - start_time) / self.config.batch_size)
 
         train_loss /= len(train_loader) + 1
-        return train_loss
+        cost_time /= len(train_loader) + 1
+        return train_loss, cost_time
 
     def _valid(self, valid_loader):
         """
@@ -88,6 +113,7 @@ class SimTrainer(Trainer):
         """
         self.model.eval()
         val_loss = 0
+        cost_time = 0
         for batch_idx, data in tqdm(enumerate(valid_loader)):
             pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device)
@@ -96,12 +122,18 @@ class SimTrainer(Trainer):
             locs = locs.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
+
+            start_time = time()
             pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
+            end_time = time()
+
             loss = self.criterion(pm25_pred, pm25_label)
             val_loss += loss.item()
+            cost_time += ((end_time - start_time) / self.config.batch_size)
 
         val_loss /= len(valid_loader) + 1
-        return val_loss
+        cost_time /= len(valid_loader) + 1
+        return val_loss, cost_time
 
     def _test(self, test_loader):
         """
@@ -112,6 +144,7 @@ class SimTrainer(Trainer):
         predict_list = []
         label_list = []
         test_loss = 0
+        cost_time = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
             pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device)
@@ -120,9 +153,14 @@ class SimTrainer(Trainer):
             locs = locs.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
+
+            start_time = time()
             pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
+            end_time = time()
+
             loss = self.criterion(pm25_pred, pm25_label)
             test_loss += loss.item()
+            cost_time += ((end_time - start_time) / self.config.batch_size)
 
             pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
             pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())
@@ -130,11 +168,12 @@ class SimTrainer(Trainer):
             label_list.append(pm25_label_val)
 
         test_loss /= len(test_loader) + 1
+        cost_time /= len(test_loader) + 1
 
         predict_epoch = np.concatenate(predict_list, axis=0)
         label_epoch = np.concatenate(label_list, axis=0)
         predict_epoch[predict_epoch < 0] = 0
-        return test_loss, predict_epoch, label_epoch
+        return test_loss, predict_epoch, label_epoch, cost_time
 
     def _get_criterion(self):
         """
@@ -147,120 +186,55 @@ class SimTrainer(Trainer):
         return torch.optim.Adam(self.model.parameters(),
                                 lr=self.config.lr, weight_decay=self.config.weight_decay)
 
-    def run(self):
-        """
-        do experiment training
-        :return:
-        """
-        # save config file
-        try:
-            shutil.copy(self.config.config_path, os.path.join(self.record_dir, 'base_config.yaml'))
-            shutil.copy(self.config.model_config_path, os.path.join(self.record_dir,
-                                                                    f'{self.config.model_name}_config.yaml'))
-            self.logger.debug('base_config.yaml copied')
-        except IOError as e:
-            self.logger.error(f'Error copying config file: {e}')
-        self.logger.debug('Start experiment...')
-        for exp in range(self.config.exp_times):
-            self.logger.info(f'Current experiment : {exp}')
-            exp_dir = os.path.join(self.record_dir, f'exp_{exp}')
-            if not os.path.exists(exp_dir):
-                os.makedirs(exp_dir)
-            # create data loader
-            train_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True,
-                                      drop_last=True, pin_memory=True, num_workers=6)
-            valid_loader = DataLoader(self.valid_dataset, batch_size=self.config.batch_size, shuffle=False,
-                                      drop_last=True, pin_memory=True, num_workers=6)
-            test_loader = DataLoader(self.test_dataset, batch_size=self.config.batch_size, shuffle=False,
-                                     drop_last=True, pin_memory=True, num_workers=6)
-            # epoch variants
-            best_epoch = 0
-            self.train_loss_list = []
-            self.test_loss_list = []
-            self.valid_loss_list = []
-            self.rmse_list = []
-            self.mae_list = []
-            self.csi_list = []
-            self.pod_list = []
-            self.far_list = []
+    def run_test(self, model_path: str, model_hist_len: int, model_pred_len: int):
+        test_pred_len = 24  # must be a multiple of model_pred_len
+        test_hist_len = model_hist_len
+        pred_count = test_pred_len // model_pred_len
+        all_len = model_hist_len + model_pred_len
 
-            for epoch in range(self.config.epochs):
-                self.logger.debug(f'Experiment time :{exp}, Epoch time : {epoch}')
-                train_loss = self._train(train_loader)
-                val_loss = self._valid(valid_loader)
-                self.logger.info('train_loss: %.4f, val_loss: %.4f' % (train_loss, val_loss))
-                # End train without the best result in consecutive early_stop epochs
-                if epoch - best_epoch > self.config.early_stop and self.config.is_early_stop:
-                    self.logger.info('Early stop at epoch {}, best loss = {:.6f}'
-                                     .format(epoch, np.min(self.valid_loss_list)))
-                    break
-                # update val loss
-                best_val_loss = np.min(self.valid_loss_list) if len(self.valid_loss_list) > 0 else np.inf
-                if val_loss < best_val_loss:
-                    best_epoch = epoch
-                    # test model
-                    test_loss, predict_epoch, label_epoch = self._test(test_loader)
-                    rmse, mae, csi, pod, far = get_metrics(predict_epoch, label_epoch, predict_mode='sim')
+        # prepare dataset
+        config = self.config
+        config.hist_len = test_hist_len
+        config.pred_len = test_pred_len
+        dataset = SimParser(config, mode='test')
+        dataloader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False,
+                                drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
 
-                    self.logger.info('Epoch time: %d, test results: \n'
-                                     'Train loss: %0.4f, Val loss: %0.4f, Test loss: %0.4f \n'
-                                     'RMSE: %0.2f, MAE: %0.2f \n'
-                                     'CSI: %0.4f, POD: %0.4f, FAR: %0.4f'
-                                     % (epoch, train_loss, val_loss, test_loss, rmse, mae, csi, pod, far))
-                    self.train_loss_list.append(train_loss)
-                    self.valid_loss_list.append(val_loss)
-                    self.test_loss_list.append(test_loss)
-                    self.rmse_list.append(rmse)
-                    self.mae_list.append(mae)
-                    self.csi_list.append(csi)
-                    self.pod_list.append(pod)
-                    self.far_list.append(far)
-                    # save model
-                    torch.save(self.model.state_dict(),
-                               os.path.join(exp_dir, f'model_{self.config.model_name}.pth'))
-                    # save prediction and label
-                    if self.config.save_npy:
-                        np.save(os.path.join(exp_dir, f'predict.npy'), predict_epoch)
-                        np.save(os.path.join(exp_dir, f'label.npy'), label_epoch)
-                        self.logger.info(f'Save model and results at epoch {epoch}')
-                    else:
-                        self.logger.info(f'Save model at epoch {epoch}')
+        self.model.load_state_dict(torch.load(model_path))
+        self.model.eval()
+        predict_list = []
+        label_list = []
+        self.logger.info("Start Test:")
+        start_time = time()
+        with torch.no_grad():
+            for batch_idx, data in tqdm(enumerate(dataloader)):
+                pred = []
+                pm25, feature, locs, emb_feature = data
+                pm25 = pm25.to(self.device)
+                pm25_label = pm25[:, test_hist_len:]
+                pm25_hist = pm25[:, :test_hist_len]
+                feature = feature.to(self.device)
+                emb_feature = emb_feature.int().to(self.device)
+                locs = locs.to(self.device)
+                for i in range(pred_count):
+                    features = feature[:, :, i*model_hist_len:i*model_hist_len+all_len]
+                    emb_features = emb_feature[:, i * model_hist_len:i * model_hist_len + all_len]
+                    pm25_pred = self.model(pm25_hist, features, locs, emb_features)
+                    pred.append(pm25_pred)
+                    pm25_hist = torch.cat([pm25_hist, pm25_pred], dim=1)[:, -model_hist_len:]
 
-            self.logger.info('Experiment time: %d, test results: \n'
-                             'Train loss: %0.4f, Val loss: %0.4f, Test loss: %0.4f \n'
-                             'RMSE: %0.2f, MAE: %0.2f \n'
-                             'CSI: %0.4f, POD: %0.4f, FAR: %0.4f'
-                             % (exp, self.train_loss_list[-1], self.valid_loss_list[-1], self.test_loss_list[-1],
-                                self.rmse_list[-1], self.mae_list[-1], self.csi_list[-1],
-                                self.pod_list[-1], self.far_list[-1]))
-            self.exp_train_loss_list.append(self.train_loss_list[-1])
-            self.exp_test_loss_list.append(self.test_loss_list[-1])
-            self.exp_valid_loss_list.append(self.valid_loss_list[-1])
-            self.exp_rmse_list.append(self.rmse_list[-1])
-            self.exp_mae_list.append(self.mae_list[-1])
-            self.exp_csi_list.append(self.csi_list[-1])
-            self.exp_pod_list.append(self.pod_list[-1])
-            self.exp_far_list.append(self.far_list[-1])
+                pm25_pred = torch.cat(pred, dim=1)
+                pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
+                pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())
+                predict_list.append(pm25_pred_val)
+                label_list.append(pm25_label_val)
 
-            # save metrics
-            metrics_data = np.concatenate((np.array(self.train_loss_list), np.array(self.valid_loss_list),
-                                           np.array(self.test_loss_list), np.array(self.rmse_list),
-                                           np.array(self.mae_list), np.array(self.csi_list),
-                                           np.array(self.pod_list), np.array(self.far_list)), axis=0)
-            np.save(os.path.join(exp_dir, f'exp_{exp}_res.npy'), metrics_data)
+        end_time = time()
 
-        self.logger.info("Finished all experiments: \n"
-                         'train_loss | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_train_loss_list)) +
-                         'val_loss   | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_valid_loss_list)) +
-                         'test_loss  | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_test_loss_list)) +
-                         'RMSE       | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_rmse_list)) +
-                         'MAE        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_mae_list)) +
-                         'CSI        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_csi_list)) +
-                         'POD        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_pod_list)) +
-                         'FAR        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_far_list)))
-        metrics_data = np.concatenate((np.array(self.exp_train_loss_list), np.array(self.exp_valid_loss_list),
-                                       np.array(self.exp_test_loss_list), np.array(self.exp_rmse_list),
-                                       np.array(self.exp_mae_list), np.array(self.exp_csi_list),
-                                       np.array(self.exp_pod_list), np.array(self.exp_far_list)), axis=0)
-        np.save(os.path.join(self.record_dir, 'all_exp_res.npy'), metrics_data)
-        self.logger.debug('Experiments finished.')
+        self.logger.info(f'Test end. Time taken: {end_time - start_time} s')
+        predict_epoch = np.concatenate(predict_list, axis=0)
+        label_epoch = np.concatenate(label_list, axis=0)
+        predict_epoch[predict_epoch < 0] = 0
+        np.save(os.path.join(self.record_dir, f'{self.config.model_name}_predict.npy'), predict_epoch)
+        np.save(os.path.join(self.record_dir, f'{self.config.model_name}_label.npy'), label_epoch)
+
