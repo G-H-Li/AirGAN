@@ -7,6 +7,7 @@ from torch.utils import data
 
 from src.utils.config import Config, get_time
 from src.utils.scaler import StandardScaler
+from src.utils.utils import np_relu
 
 
 class CityAirDataset(data.Dataset):
@@ -126,8 +127,8 @@ class SimParser(data.Dataset):
     def __init__(self, config: Config, mode='train'):
         if mode not in ['train', 'valid', 'test']:
             raise ValueError(f'Invalid mode: {mode}')
-        self.k = config.k
         self.nodes = np.load(os.path.join(config.dataset_dir, 'KnowAir_loc_filled.npy'))
+        self.node_attr = np.load(os.path.join(config.dataset_dir, 'KnowAir_node_attr.npy'))
         self.feature = np.load(os.path.join(config.dataset_dir, 'KnowAir_feature.npy'))
         self.pm25 = np.load(os.path.join(config.dataset_dir, 'KnowAir_pm25.npy'))
         self.adj_weighted = np.load(os.path.join(config.dataset_dir, 'KnowAir_weighted_adj.npy'))
@@ -202,6 +203,8 @@ class SimParser(data.Dataset):
     def _calc_mean_std(self):
         self.feature_mean = self.feature.mean(axis=(0, 1))
         self.feature_std = self.feature.std(axis=(0, 1))
+        self.wind_mean = self.feature_mean[:, -2:]
+        self.wind_std = self.feature_std[:, -2:]
         self.pm25_mean = self.pm25.mean()
         self.pm25_std = self.pm25.std()
         self.loc_mean = self.nodes.mean(axis=0)
@@ -214,19 +217,64 @@ class SimParser(data.Dataset):
         loc_idx = self.idx[index]
         batch = index // self.node_num
         one_hop_loc = self.adj_weighted[loc_idx].squeeze()
-        max_k_indices = np.argsort(one_hop_loc)[-self.k:][::-1]
-        one_hop_loc = np.nonzero(one_hop_loc)
-
-        feature = [self.feature[index]]
+        one_hop_loc = np.nonzero(one_hop_loc)[0]
         feature_batch = self.feature[batch*self.node_num:(batch+1)*self.node_num, :]
-        feature_close = feature_batch[max_k_indices]
-        feature_close = [feature_close[i] for i in range(feature_close.shape[0])]
-        feature_aug = feature_batch[one_hop_loc].mean(axis=0)
-        feature += feature_close
-        feature.append(feature_aug)
-        feature = np.stack(feature, axis=0)
-        return self.pm25[index], feature, self.locs[index], self.embedding_feature[index]
+        feature_one_hop_loc = feature_batch[one_hop_loc]
+        # cal static feature
+        feature_self = self.feature[index].reshape(1, feature_one_hop_loc.shape[1], -1)
+        # max_k_indices = np.argsort(one_hop_loc)[-self.k:][::-1]
+        # feature_close = feature_batch[max_k_indices]
+        feature_aug = feature_batch[one_hop_loc].mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
+        # static_feature = np.concatenate((feature_self, feature_close, feature_aug), axis=0)
+        static_feature = np.concatenate((feature_self, feature_aug), axis=0)
+        # cal dynamic feature
+        # first self -> one-hop
+        out_node_attr = self.node_attr[loc_idx][:, one_hop_loc]
+        out_src_node = feature_self.squeeze()
+        out_src_wind = out_src_node[:, -2:] * self.wind_std[loc_idx, :] + self.wind_mean[loc_idx, :]
+        out_src_wind_speed = out_src_wind[:, 0].reshape((-1, 1))
+        out_src_wind_dir = out_src_wind[:, 1].reshape((-1, 1))
+        out_node_attr = out_node_attr.repeat(out_src_node.shape[0], axis=0)
+        out_tar_dist = out_node_attr[:, :, 0]
+        out_tar_dir = out_node_attr[:, :, 1]
+        theta = np.abs(out_tar_dir - out_src_wind_dir)
+        # out_weight 计划还可以使用在h0初始化中
+        out_weight = np_relu(np.tanh(3 * out_src_wind_speed * np.cos(theta) / out_tar_dist))
+        out_weight = np.mean(out_weight, axis=-1).reshape((-1, 1))
+        out_weight = -out_weight
+        # out_feature = []
+        # for i in range(out_src_node.shape[0]):
+        #     out_node_idx = one_hop_loc[np.nonzero(out_weight[i])[0]]
+        #     if out_node_idx.size > 0:
+        #         out_feature.append(feature_batch[out_node_idx].mean(axis=0))
+        # out_feature = np.stack(out_feature, axis=0)
+        # out_feature = out_feature.mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
+        # second one-hop -> self
+        in_node_attr = np.transpose(self.node_attr, (1, 0, 2))[loc_idx][:, one_hop_loc]
+        in_src_nodes = feature_one_hop_loc.transpose((1, 0, 2))
+        in_src_wind = in_src_nodes[:, :, -2:] * self.wind_std[one_hop_loc, :] + self.wind_mean[one_hop_loc, :]
+        in_src_wind_speed = in_src_wind[:, :, 0]
+        in_src_wind_dir = in_src_wind[:, :, 1]
+        in_node_attr = in_node_attr.repeat(in_src_nodes.shape[0], axis=0)
+        in_tar_dist = in_node_attr[:, :, 0]
+        in_tar_dir = in_node_attr[:, :, 1]
+        theta = np.abs(in_tar_dir - in_src_wind_dir)
+        # in_weight 计划还可以使用在h0初始化中
+        in_weight = np_relu(np.tanh(3 * in_src_wind_speed * np.cos(theta) / in_tar_dist))
+        in_weight = np.mean(in_weight, axis=-1).reshape((-1, 1))
+        # in_feature = []
+        # for i in range(in_src_nodes.shape[0]):
+        #     in_node_idx = one_hop_loc[np.nonzero(in_weight[i])[0]]
+        #     if in_node_idx.size > 0:
+        #         in_feature.append(feature_batch[in_node_idx].mean(axis=0))
+        # in_feature = np.stack(in_feature, axis=0)
+        # in_feature = in_feature.mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
+
+        # feature = np.concatenate((static_feature, in_feature, out_feature), axis=0)
+        in_out_weight = np.concatenate((in_weight, out_weight), axis=-1)
+        return self.pm25[index], static_feature, self.locs[index], self.embedding_feature[index], in_out_weight
 
 
 if __name__ == '__main__':
     know_air = SimParser(Config())
+    know_air.__getitem__(1)

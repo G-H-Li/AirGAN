@@ -1,4 +1,5 @@
 import os
+import shutil
 from time import time
 
 import numpy as np
@@ -47,10 +48,9 @@ class SimTrainer(Trainer):
                          self.in_dim,
                          self.config.hidden_dim,
                          self.city_num,
-                         self.config.city_em_dim,
                          self.config.dropout,
                          self.config.gru_layers,
-                         self.config.k)
+                         self.config.use_dynamic)
         else:
             self.logger.error('Unsupported model name')
             raise NotImplementedError
@@ -83,16 +83,17 @@ class SimTrainer(Trainer):
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            pm25, feature, locs, emb_feature = data
+            pm25, feature, locs, emb_feature, in_out_weight = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
             emb_feature = emb_feature.int().to(self.device)
             locs = locs.to(self.device)
+            in_out_weight = in_out_weight.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
             start_time = time()
-            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
             end_time = time()
 
             loss = self.criterion(pm25_pred, pm25_label)
@@ -115,16 +116,17 @@ class SimTrainer(Trainer):
         val_loss = 0
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(valid_loader)):
-            pm25, feature, locs, emb_feature = data
+            pm25, feature, locs, emb_feature, in_out_weight = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
             emb_feature = emb_feature.int().to(self.device)
             locs = locs.to(self.device)
+            in_out_weight = in_out_weight.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
             start_time = time()
-            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
             end_time = time()
 
             loss = self.criterion(pm25_pred, pm25_label)
@@ -146,16 +148,17 @@ class SimTrainer(Trainer):
         test_loss = 0
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
-            pm25, feature, locs, emb_feature = data
+            pm25, feature, locs, emb_feature, in_out_weight = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
             emb_feature = emb_feature.int().to(self.device)
             locs = locs.to(self.device)
+            in_out_weight = in_out_weight.to(self.device)
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
             start_time = time()
-            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
             end_time = time()
 
             loss = self.criterion(pm25_pred, pm25_label)
@@ -187,6 +190,11 @@ class SimTrainer(Trainer):
                                 lr=self.config.lr, weight_decay=self.config.weight_decay)
 
     def run_test(self, model_path: str, model_hist_len: int, model_pred_len: int):
+        try:
+            shutil.copy(model_path, os.path.join(self.record_dir, f'model_{self.config.model_name}.yaml'))
+            self.logger.debug('model file copied')
+        except IOError as e:
+            self.logger.error(f'Error copying config file: {e}')
         test_pred_len = 24  # must be a multiple of model_pred_len
         test_hist_len = model_hist_len
         pred_count = test_pred_len // model_pred_len

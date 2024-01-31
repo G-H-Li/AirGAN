@@ -142,7 +142,7 @@ class Trainer(object):
             self.logger.debug('base_config.yaml copied')
         except IOError as e:
             self.logger.error(f'Error copying config file: {e}')
-        self.get_model_info()
+        # self.get_model_info()
         self.logger.debug('Start experiment...')
         for exp in range(self.config.exp_times):
             self.logger.info(f'Current experiment : {exp}')

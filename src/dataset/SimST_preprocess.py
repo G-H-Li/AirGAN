@@ -3,7 +3,10 @@ from collections import OrderedDict
 
 import numpy as np
 from bresenham import bresenham
+from geopy.distance import geodesic
+from metpy.units import units
 from scipy.spatial import distance
+import metpy.calc as mpcalc
 
 from src.utils.config import Config
 
@@ -18,9 +21,10 @@ class SimSTGraph:
         self.altitude = self._load_altitude()
         self.nodes = self._gen_nodes()
         self.node_num = len(self.nodes)
-        self.weight_adj_matrix = self.get_weight_adj()
+        self.weight_adj_matrix, self.node_attr = self.get_weight_adj()
         self.norm_adj_matrix = self.get_norm_wighted_adjacency_matrix()
         np.save(os.path.join(config.dataset_dir, 'KnowAir_weighted_adj.npy'), self.norm_adj_matrix)
+        np.save(os.path.join(config.dataset_dir, 'KnowAir_node_attr.npy'), self.node_attr)
 
     def _load_altitude(self):
         """
@@ -75,15 +79,27 @@ class SimSTGraph:
         # cal distance
         dist = distance.cdist(coords, coords, 'euclidean')
         adj = np.zeros((self.node_num, self.node_num), dtype=np.uint8)
+        dist_arr = np.zeros((self.node_num, self.node_num, 1), dtype=np.float32)
+        direction_arr = np.zeros((self.node_num, self.node_num, 1), dtype=np.float32)
         adj[dist <= self.distance_threshold] = 1
         # cal altitude
         for i in range(self.node_num):
-            for j in range(i, self.node_num):
+            for j in range(self.node_num):
                 if i != j and adj[i, j] == 1:
                     src_lat, src_lon = self.nodes[i]['lat'], self.nodes[i]['lon']
                     dest_lat, dest_lon = self.nodes[j]['lat'], self.nodes[j]['lon']
                     src_x, src_y = self._lonlat2xy(src_lon, src_lat, True)
                     dest_x, dest_y = self._lonlat2xy(dest_lon, dest_lat, True)
+
+                    src_location = (src_lat, src_lon)
+                    dest_location = (dest_lat, dest_lon)
+                    dist_km = geodesic(src_location, dest_location).kilometers
+                    v, u = src_lat - dest_lat, src_lon - dest_lon
+
+                    u = u * units.meter / units.second
+                    v = v * units.meter / units.second
+                    direction = mpcalc.wind_direction(u, v)._magnitude
+
                     points = np.asarray(list(bresenham(src_y, src_x, dest_y, dest_x))).transpose((1, 0))
                     altitude_points = self.altitude[points[0], points[1]]
                     altitude_src = self.altitude[src_y, src_x]
@@ -91,15 +107,17 @@ class SimSTGraph:
                     if np.sum(altitude_points - altitude_src > self.altitude_threshold) < 3 and \
                             np.sum(altitude_points - altitude_dest > self.altitude_threshold) < 3:
                         adj[i, j] = 1
-                        adj[j, i] = 1
+                        dist_arr[i, j, 0] = dist_km
+                        direction_arr[i, j, 0] = direction
                     else:
                         adj[i, j] = 0
-                        adj[j, i] = 0
 
         dis_std = np.std(dist)
         weight_adj = np.exp(-np.square(dist) / np.square(dis_std)) * adj
 
-        return weight_adj
+        node_attr = np.concatenate((dist_arr, direction_arr), axis=-1)
+
+        return weight_adj, node_attr
 
     def get_norm_wighted_adjacency_matrix(self):
         unit_m = np.eye(self.weight_adj_matrix.shape[0])

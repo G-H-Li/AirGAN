@@ -1,4 +1,5 @@
 import os
+import shutil
 from time import time
 
 import numpy as np
@@ -295,6 +296,11 @@ class STTrainer(Trainer):
         return test_loss, predict_epoch, label_epoch, cost_time
 
     def run_test(self, model_path: str, model_hist_len: int, model_pred_len: int):
+        try:
+            shutil.copy(model_path, os.path.join(self.record_dir, f'model_{self.config.model_name}.yaml'))
+            self.logger.debug('model file copied')
+        except IOError as e:
+            self.logger.error(f'Error copying config file: {e}')
         test_pred_len = 24  # must be a multiple of model_pred_len
         test_hist_len = model_hist_len
         pred_count = test_pred_len // model_pred_len

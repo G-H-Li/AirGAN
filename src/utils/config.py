@@ -140,11 +140,10 @@ class Config(object):
         elif self.model_name == 'SimST':
             config = model_params_config['SimST']
             self.hidden_dim = config['hidden_dim']
-            self.k = config['k']
-            self.city_em_dim = config['city_em_dim']
             self.dropout = config['dropout']
             self.clip = config['clip']
             self.gru_layers = config['gru_layers']
+            self.use_dynamic = config['use_dynamic']
 
     def _read_data_info_config(self):
         """

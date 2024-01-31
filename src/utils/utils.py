@@ -43,3 +43,7 @@ def toggle_grad(model, requires_grad: bool):
     """
     for p in model.parameters():
         p.requires_grad_(requires_grad)
+
+
+def np_relu(x):
+    return np.maximum(0, x)

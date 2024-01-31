@@ -25,11 +25,11 @@ experiment:
   # progress setting
   save_npy: True
   # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, AirGAN，SimST
-  model_name: PM25_GNN
+  model_name: SimST
   # train seed, 0 means random
-  seed: 0
+  seed: 1
   # dataloader num worker
-  num_workers: 3
+  num_workers: 12
 
 # general filepath
 filepath:
