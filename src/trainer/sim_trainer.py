@@ -189,17 +189,12 @@ class SimTrainer(Trainer):
         return torch.optim.Adam(self.model.parameters(),
                                 lr=self.config.lr, weight_decay=self.config.weight_decay)
 
-    def run_test(self, model_path: str, model_hist_len: int, model_pred_len: int):
+    def run_test(self, model_path: str, test_hist_len: int, test_pred_len: int):
         try:
-            shutil.copy(model_path, os.path.join(self.record_dir, f'model_{self.config.model_name}.yaml'))
+            shutil.copy(model_path, os.path.join(self.record_dir, f'model_{self.config.model_name}.pth'))
             self.logger.debug('model file copied')
         except IOError as e:
             self.logger.error(f'Error copying config file: {e}')
-        test_pred_len = 24  # must be a multiple of model_pred_len
-        test_hist_len = model_hist_len
-        pred_count = test_pred_len // model_pred_len
-        all_len = model_hist_len + model_pred_len
-
         # prepare dataset
         config = self.config
         config.hist_len = test_hist_len
@@ -209,6 +204,8 @@ class SimTrainer(Trainer):
                                 drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
 
         self.model.load_state_dict(torch.load(model_path))
+        self.model.hist_len = test_hist_len
+        self.model.pred_len = test_pred_len
         self.model.eval()
         predict_list = []
         label_list = []
@@ -216,22 +213,15 @@ class SimTrainer(Trainer):
         start_time = time()
         with torch.no_grad():
             for batch_idx, data in tqdm(enumerate(dataloader)):
-                pred = []
-                pm25, feature, locs, emb_feature = data
+                pm25, feature, locs, emb_feature, in_out_weight = data
                 pm25 = pm25.to(self.device)
                 pm25_label = pm25[:, test_hist_len:]
                 pm25_hist = pm25[:, :test_hist_len]
                 feature = feature.to(self.device)
+                in_out_weight = in_out_weight.to(self.device)
                 emb_feature = emb_feature.int().to(self.device)
                 locs = locs.to(self.device)
-                for i in range(pred_count):
-                    features = feature[:, :, i*model_hist_len:i*model_hist_len+all_len]
-                    emb_features = emb_feature[:, i * model_hist_len:i * model_hist_len + all_len]
-                    pm25_pred = self.model(pm25_hist, features, locs, emb_features)
-                    pred.append(pm25_pred)
-                    pm25_hist = torch.cat([pm25_hist, pm25_pred], dim=1)[:, -model_hist_len:]
-
-                pm25_pred = torch.cat(pred, dim=1)
+                pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
                 pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
                 pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())
                 predict_list.append(pm25_pred_val)
@@ -243,6 +233,8 @@ class SimTrainer(Trainer):
         predict_epoch = np.concatenate(predict_list, axis=0)
         label_epoch = np.concatenate(label_list, axis=0)
         predict_epoch[predict_epoch < 0] = 0
-        np.save(os.path.join(self.record_dir, f'{self.config.model_name}_predict.npy'), predict_epoch)
-        np.save(os.path.join(self.record_dir, f'{self.config.model_name}_label.npy'), label_epoch)
+        np.save(os.path.join(self.record_dir,
+                             f'{self.config.model_name}_predict_{test_hist_len}_{test_pred_len}.npy'), predict_epoch)
+        np.save(os.path.join(self.record_dir,
+                             f'{self.config.model_name}_label_{test_hist_len}_{test_pred_len}.npy'), label_epoch)
 

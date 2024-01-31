@@ -35,11 +35,11 @@ def read_predict_res(config, model_name: str, hist_len: int, pred_len: int, pred
 
     plt.suptitle(f'{model_name} {hist_len}_{pred_len} prediction error')
     plt.tight_layout()
-    plt.legend()
 
     plt.show()
 
 
 if __name__ == "__main__":
     config = Config()
+    # read_predict_res(config, "SimST", 8, 24, "city")
     read_predict_res(config, "PM25_GNN", 8, 24, "group")

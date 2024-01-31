@@ -222,10 +222,7 @@ class SimParser(data.Dataset):
         feature_one_hop_loc = feature_batch[one_hop_loc]
         # cal static feature
         feature_self = self.feature[index].reshape(1, feature_one_hop_loc.shape[1], -1)
-        # max_k_indices = np.argsort(one_hop_loc)[-self.k:][::-1]
-        # feature_close = feature_batch[max_k_indices]
         feature_aug = feature_batch[one_hop_loc].mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
-        # static_feature = np.concatenate((feature_self, feature_close, feature_aug), axis=0)
         static_feature = np.concatenate((feature_self, feature_aug), axis=0)
         # cal dynamic feature
         # first self -> one-hop
@@ -238,17 +235,9 @@ class SimParser(data.Dataset):
         out_tar_dist = out_node_attr[:, :, 0]
         out_tar_dir = out_node_attr[:, :, 1]
         theta = np.abs(out_tar_dir - out_src_wind_dir)
-        # out_weight 计划还可以使用在h0初始化中
         out_weight = np_relu(np.tanh(3 * out_src_wind_speed * np.cos(theta) / out_tar_dist))
         out_weight = np.mean(out_weight, axis=-1).reshape((-1, 1))
         out_weight = -out_weight
-        # out_feature = []
-        # for i in range(out_src_node.shape[0]):
-        #     out_node_idx = one_hop_loc[np.nonzero(out_weight[i])[0]]
-        #     if out_node_idx.size > 0:
-        #         out_feature.append(feature_batch[out_node_idx].mean(axis=0))
-        # out_feature = np.stack(out_feature, axis=0)
-        # out_feature = out_feature.mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
         # second one-hop -> self
         in_node_attr = np.transpose(self.node_attr, (1, 0, 2))[loc_idx][:, one_hop_loc]
         in_src_nodes = feature_one_hop_loc.transpose((1, 0, 2))
@@ -259,18 +248,8 @@ class SimParser(data.Dataset):
         in_tar_dist = in_node_attr[:, :, 0]
         in_tar_dir = in_node_attr[:, :, 1]
         theta = np.abs(in_tar_dir - in_src_wind_dir)
-        # in_weight 计划还可以使用在h0初始化中
         in_weight = np_relu(np.tanh(3 * in_src_wind_speed * np.cos(theta) / in_tar_dist))
         in_weight = np.mean(in_weight, axis=-1).reshape((-1, 1))
-        # in_feature = []
-        # for i in range(in_src_nodes.shape[0]):
-        #     in_node_idx = one_hop_loc[np.nonzero(in_weight[i])[0]]
-        #     if in_node_idx.size > 0:
-        #         in_feature.append(feature_batch[in_node_idx].mean(axis=0))
-        # in_feature = np.stack(in_feature, axis=0)
-        # in_feature = in_feature.mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
-
-        # feature = np.concatenate((static_feature, in_feature, out_feature), axis=0)
         in_out_weight = np.concatenate((in_weight, out_weight), axis=-1)
         return self.pm25[index], static_feature, self.locs[index], self.embedding_feature[index], in_out_weight
 

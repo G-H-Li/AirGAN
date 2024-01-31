@@ -122,7 +122,7 @@ class Trainer(object):
         """
         raise NotImplementedError('Needs implementation by child class.')
 
-    def run_test(self, model_path: str, model_hist_len: int, model_pred_len: int):
+    def run_test(self, model_path: str, test_hist_len: int, test_pred_len: int):
         """
         Run the test
         :return:
