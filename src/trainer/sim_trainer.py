@@ -50,7 +50,9 @@ class SimTrainer(Trainer):
                          self.city_num,
                          self.config.dropout,
                          self.config.gru_layers,
-                         self.config.use_dynamic)
+                         self.config.use_dynamic,
+                         self.train_dataset.pm25_mean,
+                         self.train_dataset.pm25_std)
         else:
             self.logger.error('Unsupported model name')
             raise NotImplementedError
@@ -183,7 +185,8 @@ class SimTrainer(Trainer):
         define the loss function
         :return:
         """
-        return nn.MSELoss()
+        # return nn.MSELoss()
+        return nn.L1Loss()
 
     def _get_optimizer(self):
         return torch.optim.Adam(self.model.parameters(),
@@ -204,8 +207,12 @@ class SimTrainer(Trainer):
                                 drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
 
         self.model.load_state_dict(torch.load(model_path))
-        self.model.hist_len = test_hist_len
-        self.model.pred_len = test_pred_len
+        if test_hist_len != self.model.hist_len:
+            raise ValueError('test history_seq_len does not match the model history_seq_len')
+        pred_count = test_pred_len // self.model.pred_len
+        remainder = test_pred_len % self.model.pred_len
+        pred_count = pred_count if remainder == 0 else pred_count + 1
+        all_len = self.model.pred_len + self.model.hist_len
         self.model.eval()
         predict_list = []
         label_list = []
@@ -213,6 +220,7 @@ class SimTrainer(Trainer):
         start_time = time()
         with torch.no_grad():
             for batch_idx, data in tqdm(enumerate(dataloader)):
+                pred = []
                 pm25, feature, locs, emb_feature, in_out_weight = data
                 pm25 = pm25.to(self.device)
                 pm25_label = pm25[:, test_hist_len:]
@@ -221,7 +229,18 @@ class SimTrainer(Trainer):
                 in_out_weight = in_out_weight.to(self.device)
                 emb_feature = emb_feature.int().to(self.device)
                 locs = locs.to(self.device)
-                pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
+                for i in range(pred_count):
+                    features = feature[:, :, i*test_hist_len:i*test_hist_len+all_len]
+                    emb_features = emb_feature[:, i * test_hist_len:i * test_hist_len + all_len]
+                    in_out_weights = in_out_weight[:, i * test_hist_len:i * test_hist_len + all_len]
+                    pm25_pred = self.model(pm25_hist, features, locs, emb_features, in_out_weights)
+                    pred.append(pm25_pred)
+                    pm25_hist = torch.cat([pm25_hist, pm25_pred], dim=1)[:, -test_hist_len:]
+
+                if remainder != 0:
+                    pm25_pred = torch.cat(pred, dim=1)[:, :remainder-self.model.pred_len]
+                else:
+                    pm25_pred = torch.cat(pred, dim=1)
                 pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
                 pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())
                 predict_list.append(pm25_pred_val)
