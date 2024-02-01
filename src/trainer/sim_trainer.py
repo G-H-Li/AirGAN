@@ -237,4 +237,3 @@ class SimTrainer(Trainer):
                              f'{self.config.model_name}_predict_{test_hist_len}_{test_pred_len}.npy'), predict_epoch)
         np.save(os.path.join(self.record_dir,
                              f'{self.config.model_name}_label_{test_hist_len}_{test_pred_len}.npy'), label_epoch)
-
