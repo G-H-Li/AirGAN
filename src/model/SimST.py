@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 from torch import nn
 from torch.nn import Sequential, Linear, GRU, Tanh, Dropout
@@ -22,9 +21,6 @@ class SimST(nn.Module):
         self.use_dynamic = use_dynamic
         self.pm25_mean = pm25_mean
         self.pm25_std = pm25_std
-        self.max_norm = np.sqrt(2 * 0.2 ** 2)
-
-        self.bias = nn.Parameter(torch.zeros((self.batch_size, 1)), requires_grad=True)
 
         self.emb_month = nn.Embedding(12, self.date_emb)
         self.emb_weekday = nn.Embedding(7, self.date_emb)

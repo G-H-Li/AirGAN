@@ -4,10 +4,12 @@ from collections import OrderedDict
 import numpy as np
 from bresenham import bresenham
 from geopy.distance import geodesic
+from matplotlib import pyplot as plt
 from metpy.units import units
 from scipy.spatial import distance
 import metpy.calc as mpcalc
 
+from src.dataset.l1ft import l1tf
 from src.utils.config import Config
 
 
@@ -18,13 +20,42 @@ class SimSTGraph:
         self.use_altitude = True
         self.city_path = os.path.join(config.dataset_dir, 'KnowAir_city.txt')
         self.altitude_path = os.path.join(config.dataset_dir, 'KnowAir_altitude.npy')
+        self.pm25_path = os.path.join(config.dataset_dir, 'KnowAir_pm25.npy')
+        # self.pm25_level = self._cal_pm25_category()
+        # self.pm25_trend = self._cal_pm25_trend(0.3)
         self.altitude = self._load_altitude()
         self.nodes = self._gen_nodes()
         self.node_num = len(self.nodes)
         self.weight_adj_matrix, self.node_attr = self.get_weight_adj()
         self.norm_adj_matrix = self.get_norm_wighted_adjacency_matrix()
+        # np.save(os.path.join(config.dataset_dir, 'KnowAir_PM25_level.npy'), self.pm25_level)
+        # np.save(os.path.join(config.dataset_dir, 'KnowAir_PM25_trend.npy'), self.pm25_trend)
         np.save(os.path.join(config.dataset_dir, 'KnowAir_weighted_adj.npy'), self.norm_adj_matrix)
         np.save(os.path.join(config.dataset_dir, 'KnowAir_node_attr.npy'), self.node_attr)
+
+    def _cal_pm25_category(self):
+        assert os.path.isfile(self.pm25_path)
+        pm25: np.ndarray = np.load(self.pm25_path)
+        level_1 = np.where((0 <= pm25) & (pm25 <= 35), 1, 0)
+        level_2 = np.where((35 < pm25) & (pm25 <= 75), 2, 0)
+        level_3 = np.where((75 < pm25) & (pm25 <= 115), 3, 0)
+        level_4 = np.where((115 < pm25) & (pm25 <= 150), 4, 0)
+        level_5 = np.where((150 < pm25) & (pm25 <= 250), 5, 0)
+        level_6 = np.where(250 < pm25, 6, 0)
+        pm25_level = level_1 + level_2 + level_3 + level_4 + level_5 + level_6
+        return pm25_level
+
+
+    def _cal_pm25_trend(self, delta):
+        assert os.path.isfile(self.pm25_path)
+        pm25 = np.load(self.pm25_path)
+        pm25_trend = []
+        for i in range(pm25.shape[1]):
+            node_pm25 = pm25[:, i, :].squeeze()
+            node_trend = l1tf(np.float64(node_pm25), delta)
+            pm25_trend.append(node_trend.reshape((-1, 1, 1)))
+        pm25_trend = np.concatenate(pm25_trend, axis=1)
+        return pm25_trend
 
     def _load_altitude(self):
         """
@@ -134,4 +165,4 @@ class SimSTGraph:
 
 
 if __name__ == '__main__':
-    SimSTGraph(Config())
+    a = SimSTGraph(Config())

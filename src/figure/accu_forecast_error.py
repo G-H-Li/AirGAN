@@ -5,6 +5,8 @@ import numpy as np
 
 from src.utils.config import Config
 
+plt.rcParams['figure.dpi'] = 300
+
 
 def read_predict_res(config, model_name: str, hist_len: int, pred_len: int, predict_mode: str = "group"):
     predict = np.load(os.path.join(config.results_dir, f"{model_name}_predict_{hist_len}_{pred_len}.npy"))
@@ -39,7 +41,20 @@ def read_predict_res(config, model_name: str, hist_len: int, pred_len: int, pred
     plt.show()
 
 
+def plt_trend_and_pm25(config):
+    pm25 = np.load(os.path.join(config.dataset_dir, 'KnowAir_PM25.npy'))
+    pm25_trend = np.load(os.path.join(config.dataset_dir, 'KnowAir_PM25_trend.npy'))
+
+    case = pm25[:100, 1].squeeze()
+    trend = pm25_trend[:100, 1].squeeze()
+    plt.plot(case)
+    plt.plot(trend)
+
+    plt.show()
+
+
 if __name__ == "__main__":
     config = Config()
     read_predict_res(config, "SimST", 8, 24, "city")
     # read_predict_res(config, "PM25_GNN", 8, 24, "group")
+    # plt_trend_and_pm25(config)
