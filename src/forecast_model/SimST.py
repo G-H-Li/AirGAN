@@ -49,9 +49,9 @@ class SimST(nn.Module):
         if self.use_dynamic:
             self.pred_mlp = Sequential(Linear(2 * self.hidden_dim, 1),
                                        Tanh())
-        else:
-            self.pred_mlp = Sequential(Linear(self.loc_emb + 3*self.date_emb + self.hidden_dim, 1),
-                                       Tanh())
+        # else:
+        #     self.pred_mlp = Sequential(Linear(self.loc_emb + 3*self.date_emb + self.hidden_dim, 1),
+        #                                Tanh())
 
     def forward(self, pm25_hist, features, city_locs, date_emb, in_out_weight):
         # PM25: Batch_size, hist_len, 1

@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 
-from src.model.Base_GAN import Base_GAN
+from src.forecast_model.Base_GAN import Base_GAN
 from src.utils.config import Config
 from src.utils.utils import toggle_grad
 

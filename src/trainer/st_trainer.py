@@ -10,19 +10,19 @@ from torch.utils.data import DataLoader
 from torchinfo import summary
 from tqdm import tqdm
 
-from src.dataset.parser import KnowAirDataset
-from src.model.AirFormer import AirFormer
-from src.model.DGCRN import DGCRN
-from src.model.GAGNN import GAGNN
-from src.model.GC_LSTM import GC_LSTM
-from src.model.GRU import GRU
-from src.model.LSTM import LSTM
-from src.model.MLP import MLP
-from src.model.PM25_GNN import PM25_GNN
-from src.trainer.trainer import Trainer
+from src.dataset.forecast_parser import KnowAirDataset
+from src.forecast_model.AirFormer import AirFormer
+from src.forecast_model.DGCRN import DGCRN
+from src.forecast_model.GAGNN import GAGNN
+from src.forecast_model.GC_LSTM import GC_LSTM
+from src.forecast_model.GRU import GRU
+from src.forecast_model.LSTM import LSTM
+from src.forecast_model.MLP import MLP
+from src.forecast_model.PM25_GNN import PM25_GNN
+from src.trainer.forecast_base_trainer import ForecastBaseTrainer
 
 
-class STTrainer(Trainer):
+class STTrainer(ForecastBaseTrainer):
     """
     Trainer class
     General purpose training:

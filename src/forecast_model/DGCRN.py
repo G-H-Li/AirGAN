@@ -5,7 +5,7 @@ from torch.autograd import Variable
 import numpy as np
 import sys
 
-from src.model.Cells_GCN import gcn
+from src.forecast_model.Cells_GCN import gcn
 
 
 # https://github.com/tsinghua-fib-lab/Traffic-Benchmark/blob/master/methods/DGCRN/net.py#L119

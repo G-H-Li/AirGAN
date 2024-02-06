@@ -6,13 +6,13 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.model.CW_GAN import CW_GAN
-from src.trainer.trainer import Trainer
+from src.forecast_model.CW_GAN import CW_GAN
+from src.trainer.forecast_base_trainer import ForecastBaseTrainer
 from src.utils.metrics import get_metrics
 from src.utils.utils import get_mean_std
 
 
-class GAN_Trainer(Trainer):
+class GAN_Trainer(ForecastBaseTrainer):
     """
     Trainer class
     General purpose training:

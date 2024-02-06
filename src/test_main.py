@@ -9,3 +9,4 @@ if __name__ == '__main__':
     trainer = SimTrainer(mode='test')
     # trainer = STTrainer(mode='test')
     trainer.run_test(os.path.join(trainer.config.results_dir, "model_SimST.pth"), 8, 24)
+    # trainer.get_model_info()

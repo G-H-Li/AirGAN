@@ -6,14 +6,14 @@ import torch
 import arrow
 from torch.utils.data import DataLoader
 
-from src.dataset.parser import KnowAirDataset
+from src.dataset.forecast_parser import KnowAirDataset
 from src.utils.config import Config
 from src.utils.logger import TrainLogger
 from src.utils.metrics import get_metrics
 from src.utils.utils import get_mean_std
 
 
-class Trainer(object):
+class ForecastBaseTrainer(object):
     def __init__(self, mode: str = "train"):
         # read config
         self.config = Config()

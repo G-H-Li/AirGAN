@@ -1,0 +1,84 @@
+experiment:
+  # machine setting, optional: cuda, cpu
+  device: GPU
+  # dataset setting
+  dataset_name: KnowAir
+  used_feature_params: ['2m_temperature',
+               'relative_humidity+950',
+               'boundary_layer_height',
+               'k_index',
+               'surface_pressure',
+               'total_precipitation',
+               'hour',
+               'weekday',
+               'month',
+               'wind_speed',
+               'wind_direction']
+  # 1: normalize, 2: embedding
+  feature_process: [ 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
+  train_start: [ [ 2015, 1, 1 ], GMT ]
+  train_end: [ [ 2016, 12, 31 ], GMT ]
+  valid_start: [ [ 2017, 1, 1 ], GMT ]
+  valid_end: [ [ 2017, 12, 31 ], GMT ]
+  test_start: [ [ 2018, 1, 1 ], GMT ]
+  test_end: [ [ 2018, 12, 31 ], GMT ]
+  # progress setting
+  save_npy: True
+  # model setting, optional: ADAIN
+  model_name: ADAIN
+  # train seed, 0 means random
+  seed: 1
+  # dataloader num worker
+  num_workers: 12
+
+# general filepath
+filepath:
+  Local:
+    dataset_dir: D:\Project\AirGAN\data
+    records_dir: D:\Project\AirGAN\records
+    results_dir: D:\Project\AirGAN\results
+
+general_hyper_params:
+  hist_len: 8
+  pred_len: 24
+  batch_size: 64
+  epochs: 50
+  exp_times: 1
+  weight_decay: 0.5
+  lr: 0.0005
+  is_early_stop: True
+  early_stop: 10
+# model hyperparameters setting
+model_hyper_params:
+  ADAIN:
+    dropout: 0.1
+
+# dataset info
+KnowAir:
+  data_start: [ [ 2015, 1, 1, 0, 0 ], GMT ]
+  data_end: [ [ 2018, 12, 31, 21, 0 ], GMT ]
+  time_span_hour: 3
+  city_num: 184
+  feature_params:
+    ['100m_u_component_of_wind',
+     '100m_v_component_of_wind',
+     '2m_dewpoint_temperature',
+     '2m_temperature',
+     'boundary_layer_height',
+     'k_index',
+     'relative_humidity+950',
+     'relative_humidity+975',
+     'specific_humidity+950',
+     'surface_pressure',
+     'temperature+925',
+     'temperature+950',
+     'total_precipitation',
+     'u_component_of_wind+950',
+     'v_component_of_wind+950',
+     'vertical_velocity+950',
+     'vorticity+950',
+     'hour',
+     'weekday',
+     'month',
+     'wind_speed',
+     'wind_direction']

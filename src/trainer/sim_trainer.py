@@ -9,12 +9,12 @@ from torch.utils.data import DataLoader
 from torchinfo import summary
 from tqdm import tqdm
 
-from src.dataset.parser import SimParser
-from src.model.SimST import SimST
-from src.trainer.trainer import Trainer
+from src.dataset.forecast_parser import SimParser
+from src.forecast_model.SimST import SimST
+from src.trainer.forecast_base_trainer import ForecastBaseTrainer
 
 
-class SimTrainer(Trainer):
+class SimTrainer(ForecastBaseTrainer):
     def __init__(self, mode):
         super(SimTrainer, self).__init__(mode)
         self.model = self._get_model()
@@ -61,13 +61,14 @@ class SimTrainer(Trainer):
         data_loader = DataLoader(self.train_dataset, batch_size=self.config.batch_size, shuffle=True,
                                  drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
         for data in data_loader:
-            pm25, feature, locs, emb_feature = data
+            pm25, feature, locs, emb_feature, in_out_weight = data
             pm25 = pm25.to(self.device)
             feature = feature.to(self.device)
             emb_feature = emb_feature.int().to(self.device)
             locs = locs.to(self.device)
+            in_out_weight = in_out_weight.to(self.device)
             pm25_hist = pm25[:, :self.config.hist_len]
-            model_stat = summary(self.model, input_data=[pm25_hist, feature, locs, emb_feature], verbose=0,
+            model_stat = summary(self.model, input_data=[pm25_hist, feature, locs, emb_feature, in_out_weight], verbose=0,
                                  batch_dim=self.config.batch_size,
                                  col_names=["input_size", "output_size", "num_params", "params_percent",
                                             "kernel_size", "mult_adds", "trainable"])

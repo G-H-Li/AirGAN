@@ -6,7 +6,7 @@ from torch_scatter import scatter_add  # , scatter_sub  # no scatter sub in last
 from torch.nn import functional as F
 from torch.nn import Parameter
 
-from src.model.Cells_RNN import GRUCell
+from src.forecast_model.Cells_RNN import GRUCell
 
 
 class GraphGNN(nn.Module):
