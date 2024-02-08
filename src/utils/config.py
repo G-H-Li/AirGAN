@@ -171,3 +171,112 @@ class Config(object):
         self.dataset_dir = file_dir['dataset_dir']
         self.records_dir = file_dir['records_dir']
         self.results_dir = file_dir['results_dir']
+
+
+class ReferConfig:
+    def __init__(self, config_path: str = config_complete_path, config_filename: str = 'refer_base_config.yaml'):
+        self.config_path = os.path.join(config_path, config_filename)
+        # read general config
+        with open(self.config_path) as f:
+            self.base_config = yaml.load(f, Loader=yaml.FullLoader)
+        if self.base_config is None:
+            sys.exit("No config file found")
+        self._read_experiment_config()
+        # read model hyperparameters
+        if self.model_name in ['ADAIN', 'NBST']:
+            self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
+            with open(self.model_config_path) as f:
+                self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)
+            if self.hyperparameters is None:
+                sys.exit("No model config file found")
+        else:
+            raise ValueError('Unknown model')
+        self._read_filepath_config()
+        self._read_data_info_config()
+        self._read_hyper_params_config()
+        self._read_model_params_config()
+
+    def _read_filepath_config(self):
+        """
+        Read filepath config
+        :return:
+        """
+        if sys.platform == 'win32':
+            node_name = 'Local'
+        else:
+            node_name = os.uname().nodename
+        file_dir = self.base_config['filepath'][node_name]
+        self.dataset_dir = file_dir['dataset_dir']
+        self.records_dir = file_dir['records_dir']
+        self.results_dir = file_dir['results_dir']
+
+    def _read_experiment_config(self):
+        """
+        Read experiment config
+        :return:
+        """
+        experiment_config = self.base_config['experiment']
+        self.device = experiment_config['device']
+        # dataset setting
+        self.dataset_name = experiment_config['dataset_name']
+        self.used_feature_params = experiment_config['used_feature_params']
+        self.feature_process = experiment_config['feature_process']
+        if len(self.used_feature_params) != len(self.feature_process):
+            raise ValueError('feature_process and used_feature_params length do not match')
+        # progress setting
+        self.save_npy = experiment_config['save_npy']
+        # model setting
+        self.model_name = experiment_config['model_name']
+        # train seed
+        self.seed = experiment_config['seed']
+        # data loader worker num
+        self.num_workers = experiment_config['num_workers']
+
+    def _read_hyper_params_config(self):
+        """
+        Read general hyperparameter config
+        :return:
+        """
+        hyper_params_config = self.hyperparameters['general_hyper_params']
+        self.is_early_stop = hyper_params_config['is_early_stop']
+        self.early_stop = hyper_params_config['early_stop']
+        self.seq_len = hyper_params_config['seq_len']
+        self.batch_size = hyper_params_config['batch_size']
+        self.epochs = hyper_params_config['epochs']
+        self.exp_times = hyper_params_config['exp_times']
+        self.weight_decay = hyper_params_config['weight_decay']
+        self.lr = hyper_params_config['lr']
+
+    def _read_model_params_config(self):
+        """
+        Read model hyperparameter config
+        :return:
+        """
+        if 'model_hyper_params' not in self.hyperparameters:
+            return None
+        model_params_config = self.hyperparameters['model_hyper_params']
+        if 'feature_process' in model_params_config:
+            # if model config exist feature process, use model config
+            self.feature_process = model_params_config['feature_process']
+            if len(self.used_feature_params) != len(self.feature_process):
+                raise ValueError('feature_process and used_feature_params length do not match')
+        if self.model_name == 'ADAIN':
+            config = model_params_config['ADAIN']
+            self.dropout = config['dropout']
+        elif self.model_name == 'NBST':
+            config = model_params_config['NBST']
+
+    def _read_data_info_config(self):
+        """
+        Read dataset info
+        :return:
+        """
+        if self.dataset_name is None:
+            raise ValueError('Config dataset_name not exists')
+        dataset_info = self.base_config[self.dataset_name]
+        if dataset_info is None:
+            raise ValueError(f'Dataset {self.dataset_name} info not exists')
+        self.data_start = dataset_info['data_start']
+        self.data_end = dataset_info['data_end']
+        self.city_num = dataset_info['city_num']
+        self.feature_params = dataset_info['feature_params']

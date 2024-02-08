@@ -1,0 +1,48 @@
+experiment:
+  # machine setting, optional: cuda, cpu
+  device: cuda
+  # dataset setting
+  dataset_name: UrbanAir
+  used_feature_params: ['pm25',
+     'weather',
+     'temperature',
+     'humidity',
+     'wind_speed',
+     'wind_direction',
+     'month',
+     'weekday',
+     'hour']
+  # 1: normalize, 2: embedding
+  feature_process: [ 1, 2, 1, 1, 1, 2, 2, 2, 2 ]
+  # progress setting
+  save_npy: True
+  # model setting, optional: NBST
+  model_name: NBST
+  # train seed, 0 means random
+  seed: 1
+  # dataloader num worker
+  num_workers: 12
+
+# general filepath
+filepath:
+  Local:
+    dataset_dir: D:\Project\AirGAN\data
+    records_dir: D:\Project\AirGAN\records
+    results_dir: D:\Project\AirGAN\results
+
+# dataset info
+UrbanAir:
+  data_start: [ [ 2014, 5, 1, 0, 0 ], GMT ]
+  data_end: [ [ 2015, 4, 31, 23, 0 ], GMT ]
+  time_span_hour: 1
+  city_num: 30
+  feature_params:
+    ['pm25',
+     'weather',
+     'temperature',
+     'humidity',
+     'wind_speed',
+     'wind_direction',
+     'month',
+     'weekday',
+     'hour']
