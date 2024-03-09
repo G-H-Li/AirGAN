@@ -265,6 +265,10 @@ class ReferConfig:
             self.dropout = config['dropout']
         elif self.model_name == 'NBST':
             config = model_params_config['NBST']
+            self.dropout = config['dropout']
+            self.hidden_dim = config['hidden_dim']
+            self.gru_layers = config['gru_layers']
+            self.clip = config['clip']
 
     def _read_data_info_config(self):
         """

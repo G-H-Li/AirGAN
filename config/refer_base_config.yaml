@@ -19,9 +19,9 @@ experiment:
   # model setting, optional: NBST
   model_name: NBST
   # train seed, 0 means random
-  seed: 1
+  seed: 1234
   # dataloader num worker
-  num_workers: 12
+  num_workers: 1
 
 # general filepath
 filepath:

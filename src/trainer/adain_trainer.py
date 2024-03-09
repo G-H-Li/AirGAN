@@ -6,13 +6,13 @@ import tensorflow as tf
 import arrow
 
 from src.reference_model.ADAIN import ADAIN
-from src.utils.config import Config
+from src.utils.config import ReferConfig
 from src.utils.logger import TrainLogger
 
 
 class AdainTrainer:
     def __init__(self):
-        self.config = Config(config_filename='ADAIN_config.yaml')
+        self.config = ReferConfig(config_filename='refer_base_config.yaml')
         self.mode = 'train'
         # log setting
         self._create_records()

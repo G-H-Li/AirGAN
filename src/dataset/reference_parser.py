@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import torch
 from torch.utils import data
 
 from src.utils.config import ReferConfig
@@ -9,7 +10,6 @@ from src.utils.scaler import StandardScaler
 
 class NBSTParser(data.Dataset):
     def __init__(self, config, node_ids: list = None, mode: str = 'train'):
-        super(NBSTParser, self).__init__()
         if mode not in ['train', 'valid']:
             raise ValueError(f'Invalid mode: {mode}')
         self.mode = mode
@@ -22,24 +22,34 @@ class NBSTParser(data.Dataset):
         self.get_stations(node_ids)
         self.local_features, self.local_nodes, self.station_features, self.station_nodes = self.split_station_and_local(
             node_ids)
-        self.local_pm25 = self.local_features[:, :, :, 0]
+        process_pm25 = np.vectorize(self._process_pm25)
+        self.pm25_label = self.local_features[:, :, :, 0]
+        pm25_features = process_pm25(self.station_features[:, :, :, [0]])
+        self.station_features = np.concatenate((pm25_features, self.station_features[:, :, :, 1:]), axis=-1)
+        # self.pm25_label = process_pm25(self.local_features[:, :, :, 0])
+        # 使用 one-hot 编码将原始张量转换为形状为（128，24，1，6）的张量
+        # self.pm25_label = np.eye(6)[self.pm25_label.squeeze()]
+        # 去除节点数据中的经纬度信息
+        self.local_nodes = self.local_nodes[:, :, 2:]
+        self.station_nodes = self.station_nodes[:, :, 2:]
+
         self._process_feature(config)
-        self.features_mean = self.station_features.mean(axis=(0, 1))
-        self.features_std = self.station_features.std(axis=(0, 1))
-        self.station_nodes_mean = self.station_nodes.mean(axis=(0, 1))
-        self.station_nodes_std = self.station_nodes.std(axis=(0, 1))
-        self.local_nodes_mean = self.local_nodes.mean(axis=(0, 1))
-        self.local_nodes_std = self.local_nodes.std(axis=(0, 1))
+        # 去除local的pm25数据
+        self.local_emb_features = self.local_emb_features[:, :, :, 1:]
+        self.features_mean = self.station_features.mean(axis=(2, 1, 0))
+        self.features_std = self.station_features.std(axis=(2, 1, 0))
+        self.station_nodes_mean = self.station_nodes.mean(axis=(1, 0))
+        self.station_nodes_std = self.station_nodes.std(axis=(1, 0))
 
         self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
         self.feature_scaler = StandardScaler(mean=self.features_mean, std=self.features_std)
         self.station_nodes_scaler = StandardScaler(mean=self.station_nodes_mean, std=self.station_nodes_std)
-        self.local_nodes_scaler = StandardScaler(mean=self.local_nodes_mean, std=self.local_nodes_std)
 
-        self.local_pm25 = self.pm25_scaler.normalize(self.local_pm25)
+        self.pm25_label = self.pm25_scaler.normalize(self.pm25_label)
         self.station_features = self.feature_scaler.normalize(self.station_features)
+        self.local_features = self.feature_scaler.normalize(self.local_features)
         self.station_nodes = self.station_nodes_scaler.normalize(self.station_nodes)
-        self.local_nodes = self.local_nodes_scaler.normalize(self.local_nodes)
+        self.local_nodes = self.station_nodes_scaler.normalize(self.local_nodes)
 
     def _calc_mean_std(self):
         self.pm25_mean = self.pm25.mean()
@@ -93,12 +103,31 @@ class NBSTParser(data.Dataset):
         self.station_emb_features = np.unique(self.station_features[:, :, :, em_feature_idx], axis=1).squeeze()
         self.station_emb_features = self.station_emb_features.astype(np.int32)
         self.station_features = self.station_features[:, :, :, norm_feature_idx]
+        self.local_emb_features = np.unique(self.local_features[:, :, :, em_feature_idx], axis=1)
+        self.local_emb_features = self.local_emb_features.astype(np.int32)
+        self.local_features = self.local_features[:, :, :, norm_feature_idx]
+
+    def _process_pm25(self, pm25):
+        if pm25 <= 35:
+            return 0
+        elif 35 < pm25 <= 75:
+            return 1
+        elif 75 < pm25 <= 115:
+            return 2
+        elif 115 < pm25 <= 150:
+            return 3
+        elif 150 < pm25 <= 250:
+            return 4
+        elif 250 < pm25:
+            return 5
 
     def __len__(self):
-        return len(self.local_pm25)
+        return len(self.pm25_label)
 
     def __getitem__(self, index):
-        return self.local_pm25[index], self.local_nodes[index], self.station_features[index], self.station_emb_features[index], self.station_nodes[index]
+        return (self.pm25_label[index],
+                self.local_nodes[index], self.local_features[index], self.local_emb_features[index],
+                self.station_nodes[index], self.station_features[index], self.station_emb_features[index])
 
 
 if __name__ == '__main__':

@@ -66,3 +66,4 @@ def process_poi_data(file_path: str = "../../data/UrbanAir_poi.csv"):
 
 if __name__ == '__main__':
     process_poi_data()
+    process_link_data()

@@ -1,16 +1,19 @@
 # general hyperparameters setting
 general_hyper_params:
-  seq_len: 8
-  batch_size: 64
+  seq_len: 24
+  batch_size: 128
   epochs: 50
-  exp_times: 1
-  weight_decay: 0.0001
-  lr: 0.0001
+  exp_times: 3
+  weight_decay: 0.00001
+  lr: 0.00001
   is_early_stop: True
-  early_stop: 10
+  early_stop: 5
 # model hyperparameters setting
 model_hyper_params:
   # 1: normalize, 2: embedding
-  feature_process: [ 1, 2, 1, 1, 1, 2, 2, 2, 2 ]
+  feature_process: [ 2, 2, 1, 1, 1, 2, 2, 2, 2 ]
   NBST:
-    hidden_dim: 64
+    hidden_dim: 128
+    dropout: 0.4
+    gru_layers: 2
+    clip: 5

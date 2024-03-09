@@ -4,6 +4,7 @@ from functools import partial
 from torch import nn
 import torch
 from typing import Tuple
+from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score
 
 
 def get_metrics(predict_epoch, label_epoch, predict_mode='group'):
@@ -29,6 +30,20 @@ def get_metrics(predict_epoch, label_epoch, predict_mode='group'):
     mae = np.mean(np.mean(np.abs(predict - label), axis=1))
     rmse = np.mean(np.sqrt(np.mean(np.square(predict - label), axis=1)))
     return rmse, mae, csi, pod, far
+
+
+def get_class_metrics(predict_epoch, label_epoch):
+    label_haze = np.argmax(label_epoch, axis=-1)
+    predict_haze = np.argmax(predict_epoch, axis=-1)
+    label_haze = label_haze.flatten()
+    predict_haze = predict_haze.flatten()
+    accuracy = np.sum(label_haze == predict_haze) / len(label_haze)
+    precision = precision_score(label_haze, predict_haze, average='macro')
+    recall = recall_score(label_haze, predict_haze, average='macro')
+    f1 = f1_score(label_haze, predict_haze, average='macro')
+    mae = np.mean(np.mean(np.abs(predict_haze - label_haze)))
+    rmse = np.mean(np.sqrt(np.mean(np.square(predict_haze - label_haze))))
+    return rmse, mae, accuracy, f1, recall, precision
 
 
 def acf_torch(x: torch.Tensor, max_lag: int, dim:Tuple[int]=(0, 1)) -> torch.Tensor:
