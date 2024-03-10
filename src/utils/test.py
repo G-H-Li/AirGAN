@@ -12,7 +12,7 @@ from src.utils.utils import load_pickle
 
 
 def load_air_former_data():
-    a = np.load(os.path.join(Config().dataset_dir, 'assignment.npy'))
+    a = np.load(os.path.join(Config().dataset_dir, 'UrbanAir_fold_0_train_station_dist_data.npy'))
     a = torch.from_numpy(a[:, 0])
     row = a.transpose(1, 0)
     row_sums = row.sum(axis=1)
@@ -48,5 +48,4 @@ def load_adj():
 
 
 if __name__ == '__main__':
-    predefined_A = load_adj()
-    predefined_A = [torch.tensor(adj) for adj in predefined_A]
+    load_air_former_data()

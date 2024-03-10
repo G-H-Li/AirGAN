@@ -1,100 +1,85 @@
-import os
-import shutil
-
 import numpy as np
-import tensorflow as tf
-import arrow
+from torch.nn import MSELoss
+from torch.optim import Adam
+from tqdm import tqdm
 
 from src.reference_model.ADAIN import ADAIN
-from src.utils.config import ReferConfig
-from src.utils.logger import TrainLogger
+from src.trainer.reference_base_trainer import ReferenceBaseTrainer
 
 
-class AdainTrainer:
+class AdainTrainer(ReferenceBaseTrainer):
     def __init__(self):
-        self.config = ReferConfig(config_filename='refer_base_config.yaml')
-        self.mode = 'train'
-        # log setting
-        self._create_records()
-        self.logger = TrainLogger(os.path.join(self.record_dir, 'progress.log')).logger
-        # self._get_device()
-        # self._set_seed()
-        self._load_data()
-        self.time_window = 24
-        met = 29
-        dist = 2
-        aq = 1
-        self.model = ADAIN(met, dist, aq, self.time_window, self.config.dropout)
+        super().__init__()
+        self.model = self._get_model()
+        self.model = self.model.to(self.device)
+        self.optimizer = self._get_optimizer()
+        self.criterion = self._get_criterion()
 
-    def _set_seed(self):
-        if self.config.seed != 0:
-            tf.random.set_seed(self.config.seed)
+    def _get_model(self):
+        in_dim = 9
+        node_in_dim = 12
+        if self.config.model_name == 'ADAIN':
+            return ADAIN(self.config.seq_len,
+                         in_dim,
+                         node_in_dim,
+                         self.config.dropout)
 
-    def _get_device(self):
-        gpus = tf.config.list_physical_devices()
-        tf.config.set_visible_devices([], 'GPU')
-        visible_devices = tf.config.get_visible_devices()
-        tf.config.experimental.set_memory_growth(gpus[0], True)
-        tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+    def _get_optimizer(self):
+        return Adam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
 
-    def _create_records(self):
-        """
-        Create the records directory for experiments
-        :return:
-        """
-        exp_datetime = arrow.now().format('YYYYMMDDHHmmss')
-        self.record_dir = os.path.join(self.config.records_dir, f'{self.config.model_name}_{self.mode}_{exp_datetime}')
-        if not os.path.exists(self.record_dir):
-            os.makedirs(self.record_dir)
+    def _get_criterion(self):
+        return MSELoss()
 
-    def _load_data(self):
-        self.train_station_metaq = np.load(os.path.join(self.config.dataset_dir,
-                                                        'UrbanAir_fold_0_train_station_metaq_data.npy'))
-        self.train_station_dist = np.load(os.path.join(self.config.dataset_dir,
-                                                       'UrbanAir_fold_0_train_station_dist_data.npy'))
-        self.train_local_met = np.load(os.path.join(self.config.dataset_dir,
-                                                    'UrbanAir_fold_0_train_local_met_data.npy'))
-        self.train_local_aq = np.load(os.path.join(self.config.dataset_dir,
-                                                   'UrbanAir_fold_0_train_local_aq_data.npy'))
-        self.test_station_metaq = np.load(os.path.join(self.config.dataset_dir,
-                                                       'UrbanAir_fold_0_test_station_metaq_data.npy'))
-        self.test_station_dist = np.load(os.path.join(self.config.dataset_dir,
-                                                      'UrbanAir_fold_0_test_station_dist_data.npy'))
-        self.test_local_met = np.load(os.path.join(self.config.dataset_dir,
-                                                   'UrbanAir_fold_0_test_local_met_data.npy'))
-        self.test_local_aq = np.load(os.path.join(self.config.dataset_dir,
-                                                  'UrbanAir_fold_0_test_local_aq_data.npy'))
+    def _train(self, train_loader):
+        self.model.train()
+        train_loss = 0
+        for batch_idx, data in tqdm(enumerate(train_loader)):
+            self.optimizer.zero_grad()
+            label_pm25, local_nodes, local_features, station_nodes, station_features, station_dist = data
+            label_pm25 = label_pm25.float().to(self.device)
+            local_nodes = local_nodes.float().to(self.device)
+            local_features = local_features.float().to(self.device)
+            station_features = station_features.float().to(self.device)
+            station_dist = station_dist.float().to(self.device)
+            station_nodes = station_nodes.float().to(self.device)
 
-    def _train(self):
-        self.model.compile(loss='mse',
-                           optimizer='adam',
-                           metrics=[tf.keras.metrics.RootMeanSquaredError()])
+            pm25_pred = self.model(local_nodes, local_features, station_nodes, station_features, station_dist)
 
-        history = self.model.fit(x=[self.train_local_met, self.train_station_dist, self.train_station_metaq],
-                                 y=self.train_local_aq, batch_size=self.config.batch_size,
-                                 validation_split=0.1, epochs=self.config.epochs, verbose=1)
-        return history
+            loss = self.criterion(pm25_pred, label_pm25)
+            loss.backward()
+            self.optimizer.step()
+            train_loss += loss.item()
 
-    def run(self):
-        try:
-            shutil.copy(self.config.model_config_path, os.path.join(self.record_dir,
-                                                                    f'{self.config.model_name}_config.yaml'))
-            self.logger.debug('config.yaml copied')
-        except IOError as e:
-            self.logger.error(f'Error copying config file: {e}')
-        self.logger.debug('Start experiment...')
-        for exp in range(self.config.exp_times):
-            self.logger.info(f'Current experiment : {exp}')
-            exp_dir = os.path.join(self.record_dir, f'exp_{exp}')
-            if not os.path.exists(exp_dir):
-                os.makedirs(exp_dir)
-            history = self._train()
-            output_data_np = np.array(history)
-            # 将 NumPy 数组保存到文件中
-            np.save(os.path.join(exp_dir, 'output_data.npy'), output_data_np)
-            self.model.save(os.path.join(exp_dir, f'model_{self.config.model_name}.h5'), save_format='h5')
+        train_loss /= len(train_loader) + 1
+        return train_loss
 
+    def _test(self, test_loader):
+        self.model.eval()
+        predict_list = []
+        label_list = []
+        test_loss = 0
+        for batch_idx, data in tqdm(enumerate(test_loader)):
+            label_pm25, local_nodes, local_features, station_nodes, station_features, station_dist = data
+            label_pm25 = label_pm25.float().to(self.device)
+            local_nodes = local_nodes.float().to(self.device)
+            local_features = local_features.float().to(self.device)
+            station_features = station_features.float().to(self.device)
+            station_dist = station_dist.float().to(self.device)
+            station_nodes = station_nodes.float().to(self.device)
 
-if __name__ == '__main__':
-    trainer = AdainTrainer()
-    trainer.run()
+            pm25_pred = self.model(local_nodes, local_features, station_nodes, station_features, station_dist)
+
+            loss = self.criterion(pm25_pred, label_pm25)
+            test_loss += loss.item()
+
+            pm25_pred_val = self.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
+            pm25_label_val = self.pm25_scaler.denormalize(label_pm25.cpu().detach().numpy())
+            predict_list.append(pm25_pred_val)
+            label_list.append(pm25_label_val)
+
+        test_loss /= len(test_loader) + 1
+
+        predict_epoch = np.concatenate(predict_list, axis=0)
+        label_epoch = np.concatenate(label_list, axis=0)
+        predict_epoch[predict_epoch < 0] = 0
+        return test_loss, predict_epoch, label_epoch

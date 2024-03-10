@@ -8,7 +8,7 @@ used to reproduce the ADAIN paper, it may not give the exact same results but ex
 import tensorflow as tf
 
 
-def ADAIN(met, dist, aq, time_window, dropout):
+def ADAIN_TF(met, dist, aq, time_window, dropout):
     """
     met = meteorological data shape
     aq = air quality data shape

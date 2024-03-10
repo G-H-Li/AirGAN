@@ -16,8 +16,8 @@ experiment:
   feature_process: [ 1, 2, 1, 1, 1, 2, 2, 2, 2 ]
   # progress setting
   save_npy: True
-  # model setting, optional: NBST
-  model_name: NBST
+  # model setting, optional: NBST, ADAIN
+  model_name: ADAIN
   # train seed, 0 means random
   seed: 1234
   # dataloader num worker

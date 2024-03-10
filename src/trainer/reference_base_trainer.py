@@ -7,7 +7,7 @@ import torch
 from sklearn.model_selection import KFold
 from torch.utils.data import DataLoader
 
-from src.dataset.reference_parser import NBSTParser
+from src.dataset.reference_parser import NBSTParser, ADAINParser
 from src.utils.config import ReferConfig
 from src.utils.logger import TrainLogger
 from src.utils.metrics import get_metrics, get_class_metrics
@@ -113,10 +113,17 @@ class ReferenceBaseTrainer:
                 self.model.load_state_dict(torch.load(last_exp_filepath))
             # create data loader
             if self.config.dataset_name == 'UrbanAir':
-                train_dataset = NBSTParser(config=self.config, node_ids=train_ids, mode='train')
-                test_dataset = NBSTParser(config=self.config, node_ids=test_ids, mode='valid')
-                self.pm25_scaler = test_dataset.pm25_scaler
-                # pm25_mean, pm25_std = test_dataset.pm25_mean, test_dataset.pm25_std
+                if self.config.model_name == 'NBST':
+                    train_dataset = NBSTParser(config=self.config, node_ids=train_ids, mode='train')
+                    test_dataset = NBSTParser(config=self.config, node_ids=test_ids, mode='valid')
+                    self.pm25_scaler = test_dataset.pm25_scaler
+                elif self.config.model_name == 'ADAIN':
+                    train_dataset = ADAINParser(config=self.config, node_ids=train_ids, mode='train')
+                    test_dataset = ADAINParser(config=self.config, node_ids=test_ids, mode='valid')
+                    self.pm25_scaler = test_dataset.pm25_scaler
+                else:
+                    self.logger.error("Unsupported model type")
+                    raise ValueError('Unknown model type')
             else:
                 self.logger.error("Unsupported dataset type")
                 raise ValueError('Unknown dataset')
