@@ -138,11 +138,17 @@ class NBST(nn.Module):
         self.day_emb = nn.Embedding(7, self.emb_dim)
         self.hour_emb = nn.Embedding(24, self.emb_dim)
 
-        self.station_dist_mlp = nn.Sequential(Linear(self.node_in_dim + 2, self.hidden_dim),
-                                              Tanh())  #
+        self.station_dist_mlp = nn.Sequential(Linear(self.node_in_dim + 2, self.hidden_dim * 2),
+                                              Tanh(),
+                                              Linear(self.hidden_dim * 2, self.hidden_dim),
+                                              Tanh(),
+                                              nn.LayerNorm(self.hidden_dim))  #
 
-        self.static_mlp = nn.Sequential(Linear(self.node_in_dim, self.hidden_dim),
-                                        Tanh())  #
+        self.static_mlp = nn.Sequential(Linear(self.node_in_dim, self.hidden_dim * 2),
+                                        Tanh(),
+                                        Linear(self.hidden_dim * 2, self.hidden_dim),
+                                        Tanh(),
+                                        nn.LayerNorm(self.hidden_dim))  #
 
         self.static_attn_layers = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim)])
         for _ in range(self.attn_layer - 1):
