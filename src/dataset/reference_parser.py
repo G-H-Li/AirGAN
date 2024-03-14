@@ -1,8 +1,6 @@
-import math
 import os
 
 import numpy as np
-import torch
 from torch.utils import data
 
 from src.utils.config import ReferConfig
@@ -30,6 +28,10 @@ class NBSTParser(data.Dataset):
         # self.pm25_label = process_pm25(self.local_features[:, :, :, 0])
         # 使用 one-hot 编码将原始张量转换为形状为（128，24，1，6）的张量
         # self.pm25_label = np.eye(6)[self.pm25_label.squeeze()]
+        station_dist, station_direction = self._cal_distance(self.local_nodes[:, :, 1], self.local_nodes[:, :, 0],
+                                                             self.station_nodes[:, :, 1], self.station_nodes[:, :, 0])
+        self.station_dist = np.concatenate((station_dist[:, :, np.newaxis], station_direction[:, :, np.newaxis]),
+                                           axis=-1)
         # 去除节点数据中的经纬度信息
         self.local_nodes = self.local_nodes[:, :, 2:]
         self.station_nodes = self.station_nodes[:, :, 2:]
@@ -41,16 +43,20 @@ class NBSTParser(data.Dataset):
         self.features_std = self.station_features.std(axis=(2, 1, 0))
         self.station_nodes_mean = self.station_nodes.mean(axis=(1, 0))
         self.station_nodes_std = self.station_nodes.std(axis=(1, 0))
+        self.station_dist_mean = self.station_dist.mean(axis=(1, 0))
+        self.station_dist_std = self.station_dist.std(axis=(1, 0))
 
         self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
         self.feature_scaler = StandardScaler(mean=self.features_mean, std=self.features_std)
         self.station_nodes_scaler = StandardScaler(mean=self.station_nodes_mean, std=self.station_nodes_std)
+        self.station_dist_scaler = StandardScaler(mean=self.station_dist_mean, std=self.station_dist_std)
 
         self.pm25_label = self.pm25_scaler.normalize(self.pm25_label)
         self.station_features = self.feature_scaler.normalize(self.station_features)
         self.local_features = self.feature_scaler.normalize(self.local_features)
         self.station_nodes = self.station_nodes_scaler.normalize(self.station_nodes)
         self.local_nodes = self.station_nodes_scaler.normalize(self.local_nodes)
+        self.station_dist = self.station_dist_scaler.normalize(self.station_dist)
 
     def _calc_mean_std(self):
         self.pm25_mean = self.pm25.mean()
@@ -122,11 +128,37 @@ class NBSTParser(data.Dataset):
         elif 250 < pm25:
             return 5
 
+    def _cal_distance(self, lat1, lon1, lat2, lon2):
+        R = 6371.0  # 地球平均半径（单位：公里）
+
+        # 将经纬度转换为弧度
+        lat1_rad = np.radians(lat1)
+        lon1_rad = np.radians(lon1)
+        lat2_rad = np.radians(lat2)
+        lon2_rad = np.radians(lon2)
+
+        # 计算经纬度差值
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+
+        # 使用 Haversine 公式计算距离
+        a = np.sin(dlat / 2) ** 2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2) ** 2
+        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+        distance = R * c
+
+        # 计算方向角度
+        y = np.sin(lon2_rad - lon1_rad) * np.cos(lat2_rad)
+        x = np.cos(lat1_rad) * np.sin(lat2_rad) - np.sin(lat1_rad) * np.cos(lat2_rad) * np.cos(lon2_rad - lon1_rad)
+        direction = np.degrees(np.arctan2(y, x))
+        direction = np.where(direction < 0, direction + 360, direction)  # 确保方向角在 0 到 360 度之间
+
+        return distance, direction
+
     def __len__(self):
         return len(self.pm25_label)
 
     def __getitem__(self, index):
-        return (self.pm25_label[index],
+        return (self.pm25_label[index], self.station_dist[index],
                 self.local_nodes[index], self.local_features[index], self.local_emb_features[index],
                 self.station_nodes[index], self.station_features[index], self.station_emb_features[index])
 

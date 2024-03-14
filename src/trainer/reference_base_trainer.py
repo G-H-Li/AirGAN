@@ -16,7 +16,12 @@ from src.utils.utils import get_mean_std
 
 class ReferenceBaseTrainer:
     def __init__(self, mode: str = 'train'):
+        self.pm25_mean = None
+        self.pm25_std = None
         self.pm25_scaler = None
+        self.optimizer = None
+        self.scheduler = None
+        self.criterion = None
         self.config = ReferConfig()
         self.mode = mode
         self._create_records()
@@ -72,6 +77,15 @@ class ReferenceBaseTrainer:
         """
         raise NotImplementedError('Needs implementation by child class.')
 
+    def _get_criterion(self):
+        raise NotImplementedError('Needs implementation by child class.')
+
+    def _get_optimizer(self):
+        raise NotImplementedError('Needs implementation by child class.')
+
+    def _get_scheduler(self):
+        raise NotImplementedError('Needs implementation by child class.')
+
     def _train(self, train_loader):
         """
         Train model
@@ -117,6 +131,9 @@ class ReferenceBaseTrainer:
                     train_dataset = NBSTParser(config=self.config, node_ids=train_ids, mode='train')
                     test_dataset = NBSTParser(config=self.config, node_ids=test_ids, mode='valid')
                     self.pm25_scaler = test_dataset.pm25_scaler
+                    self.pm25_std = test_dataset.pm25_std
+                    self.pm25_mean = test_dataset.pm25_mean
+                    self.criterion = self._get_criterion()
                 elif self.config.model_name == 'ADAIN':
                     train_dataset = ADAINParser(config=self.config, node_ids=train_ids, mode='train')
                     test_dataset = ADAINParser(config=self.config, node_ids=test_ids, mode='valid')
@@ -144,14 +161,16 @@ class ReferenceBaseTrainer:
             self.far_list = []
 
             for epoch in range(self.config.epochs):
-                self.logger.debug(f'Experiment time :{exp}, Epoch time : {epoch}')
-                train_loss = self._train(train_loader)
-                self.logger.info('\n train_loss: %.4f' % train_loss)
                 # End train without the best result in consecutive early_stop epochs
                 if epoch - best_epoch > self.config.early_stop and self.config.is_early_stop:
-                    self.logger.info('Early stop at epoch {}, best loss = {:.6f}'
-                                     .format(epoch, np.min(self.test_loss_list)))
+                    self.logger.info('Early stop at epoch {}, best loss = {:.6f}, best epoch = {:d}'
+                                     .format(epoch, np.min(self.test_loss_list), best_epoch))
                     break
+                self.logger.debug(f'Experiment time :{exp}, Epoch time : {epoch}')
+                train_loss = self._train(train_loader)
+                if self.scheduler is not None:
+                    self.scheduler.step()
+                self.logger.info('\n train_loss: %.4f' % train_loss)
                 # test model
                 test_loss, predict_epoch, label_epoch = self._test(test_loader)
                 rmse, mae, csi, pod, far = get_metrics(predict_epoch, label_epoch, predict_mode='city')
@@ -163,13 +182,6 @@ class ReferenceBaseTrainer:
                                  'CSI: %0.4f, POD: %0.4f, FAR: %0.4f'
                                  % (epoch, train_loss, test_loss,
                                     rmse, mae, csi, pod, far))
-                self.train_loss_list.append(train_loss)
-                self.test_loss_list.append(test_loss)
-                self.rmse_list.append(rmse)
-                self.mae_list.append(mae)
-                self.csi_list.append(csi)
-                self.pod_list.append(pod)
-                self.far_list.append(far)
                 # self.acc_list.append(accuracy)
                 # self.f1_list.append(f1)
                 # self.recall_list.append(recall)
@@ -179,6 +191,13 @@ class ReferenceBaseTrainer:
                     # update val loss
                     best_loss = test_loss
                     best_epoch = epoch
+                    self.train_loss_list.append(train_loss)
+                    self.test_loss_list.append(test_loss)
+                    self.rmse_list.append(rmse)
+                    self.mae_list.append(mae)
+                    self.csi_list.append(csi)
+                    self.pod_list.append(pod)
+                    self.far_list.append(far)
                     torch.save(self.model.state_dict(),
                                os.path.join(exp_dir, f'model_{self.config.model_name}.pth'))
                     # save prediction and label

@@ -8,6 +8,6 @@ if __name__ == '__main__':
     # trainer = GAN_Trainer(mode='train')
     # trainer = SimTrainer(mode='train')
     # trainer = STTrainer(mode='train')
-    # trainer = NBSTTrainer()
-    trainer = AdainTrainer()
+    trainer = NBSTTrainer()
+    # trainer = AdainTrainer()
     trainer.run()

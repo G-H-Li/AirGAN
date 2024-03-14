@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn import CrossEntropyLoss
 from tqdm import tqdm
 
-from src.reference_model.NBST import NBST
+from src.reference_model.NBST import NBST, NBSTLoss
 from src.trainer.reference_base_trainer import ReferenceBaseTrainer
 
 
@@ -13,7 +13,6 @@ class NBSTTrainer(ReferenceBaseTrainer):
         super().__init__()
         self.model = self._get_model()
         self.model = self.model.to(self.device)
-        self.criterion = self._get_criterion()
         self.optimizer = self._get_optimizer()
 
     def _get_model(self):
@@ -27,19 +26,22 @@ class NBSTTrainer(ReferenceBaseTrainer):
                         self.node_in_dim,
                         self.config.hidden_dim,
                         self.config.dropout,
-                        self.config.gru_layers)
+                        self.config.head_num,
+                        self.config.attn_layer)
         else:
             self.logger.error('Unsupported model name')
             raise NotImplementedError
 
     def _get_criterion(self):
-        return nn.L1Loss()
-        # return nn.SmoothL1Loss()
-        # return nn.L2Loss()
+        # return nn.L1Loss()
+        # return nn.MSELoss()
+        return NBSTLoss(self.pm25_std, self.pm25_mean, self.config.alpha)
 
     def _get_optimizer(self):
-        return torch.optim.Adam(self.model.parameters(),
-                                lr=self.config.lr, weight_decay=self.config.weight_decay)
+        # return torch.optim.Adam(self.model.parameters(),
+        #                         lr=self.config.lr, weight_decay=self.config.weight_decay)
+        return torch.optim.NAdam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
+        # return torch.optim.SGD(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
 
     def _train(self, train_loader):
         """
@@ -50,7 +52,7 @@ class NBSTTrainer(ReferenceBaseTrainer):
         train_loss = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            local_pm25, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
+            local_pm25, station_dist, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
             local_node = local_node.float().to(self.device)
             local_features = local_features.float().to(self.device)
             local_emb = local_emb.to(self.device)
@@ -58,8 +60,10 @@ class NBSTTrainer(ReferenceBaseTrainer):
             station_emb = station_emb.to(self.device)
             station_features = station_features.float().to(self.device)
             pm25_label = local_pm25.float().to(self.device)
+            station_dist = station_dist.float().to(self.device)
 
-            pm25_pred = self.model(local_node, local_features, local_emb, station_nodes, station_features, station_emb)
+            pm25_pred = self.model(station_dist, local_node, local_features,
+                                   local_emb, station_nodes, station_features, station_emb)
 
             loss = self.criterion(pm25_pred, pm25_label)
             loss.backward()
@@ -80,7 +84,7 @@ class NBSTTrainer(ReferenceBaseTrainer):
         label_list = []
         test_loss = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
-            local_pm25, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
+            local_pm25, station_dist, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
             local_node = local_node.float().to(self.device)
             local_features = local_features.float().to(self.device)
             local_emb = local_emb.to(self.device)
@@ -88,8 +92,10 @@ class NBSTTrainer(ReferenceBaseTrainer):
             station_emb = station_emb.to(self.device)
             station_features = station_features.float().to(self.device)
             pm25_label = local_pm25.float().to(self.device)
+            station_dist = station_dist.float().to(self.device)
 
-            pm25_pred = self.model(local_node, local_features, local_emb, station_nodes, station_features, station_emb)
+            pm25_pred = self.model(station_dist, local_node, local_features,
+                                   local_emb, station_nodes, station_features, station_emb)
 
             loss = self.criterion(pm25_pred, pm25_label)
             test_loss += loss.item()

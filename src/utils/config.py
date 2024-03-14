@@ -267,8 +267,11 @@ class ReferConfig:
             config = model_params_config['NBST']
             self.dropout = config['dropout']
             self.hidden_dim = config['hidden_dim']
-            self.gru_layers = config['gru_layers']
+            # self.gru_layers = config['gru_layers']
             self.clip = config['clip']
+            self.alpha = config['alpha']
+            self.head_num = config['head_num']
+            self.attn_layer = config['attn_layer']
 
     def _read_data_info_config(self):
         """
