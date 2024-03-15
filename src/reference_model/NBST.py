@@ -172,16 +172,18 @@ class NBST(nn.Module):
                                       Linear(self.hidden_dim * 2, self.hidden_dim),
                                       SiLU(),
                                       nn.LayerNorm(self.hidden_dim))  #
+        # self.station_dynamic_encoder = GRU(self.hidden_dim, self.hidden_dim, dropout=self.dropout, batch_first=True, num_layers=2)
+        # self.local_dynamic_encoder = GRU(self.hidden_dim, self.hidden_dim, dropout=self.dropout, batch_first=True, num_layers=2)
 
         self.station_dynamic_attn_layers = nn.ModuleList(
             [DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.dropout)])
         self.local_dynamic_attn_layers = nn.ModuleList(
             [DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.dropout)])
-        for _ in range(self.attn_layer - 1):
-            self.station_dynamic_attn_layers.append(
-                DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.dropout))
-            self.local_dynamic_attn_layers.append(
-                DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.dropout))
+        # for _ in range(self.attn_layer - 1):
+        #     self.station_dynamic_attn_layers.append(
+        #         DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.dropout))
+        #     self.local_dynamic_attn_layers.append(
+        #         DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.dropout))
         # self.station_dynamic_attn = DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.dropout)
         # self.local_dynamic_attn = DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.dropout)
         self.station_attn_out = nn.Sequential(nn.LayerNorm(self.seq_len * self.hidden_dim),
@@ -216,8 +218,6 @@ class NBST(nn.Module):
         self.ds_attention_mlp = nn.Sequential(Linear(self.hidden_dim * 2, self.hidden_dim),
                                               SiLU(),
                                               nn.LayerNorm(self.hidden_dim))
-        
-        # self.pm25_gru = GRU(self.emb_dim, self.hidden_dim, num_layers=2, batch_first=True, dropout=self.dropout)
 
         self.pred_mlp = Sequential(Linear(3 * self.hidden_dim, self.hidden_dim * 2),
                                    Tanh(),
@@ -285,13 +285,13 @@ class NBST(nn.Module):
         # station_features_emb = torch.stack(features_emb, dim=1)
         # station_mul = torch.stack(station_mul, dim=1)
 
-        # VERSION2: 比version1具有更好的训练表现
+        # # VERSION2: 比version1具有更好的训练表现
         # _, features_emb = self.station_dynamic_encoder(station_features_emb.transpose(1, 2)
         #                                                .contiguous().view(-1, seq_len, self.hidden_dim))
         # station_features_emb = features_emb[-1].view(batch_size, station_num, -1)
         # stations_features = torch.cat((station_nodes_emb, station_features_emb), dim=-1)
         # station_mul = self.stations_mlp(stations_features.view(batch_size * station_num, -1))
-        # station_mul = station_mul.view(batch_size, station_num, -1)
+        # stations_ds_features = station_mul.view(batch_size, station_num, -1)
         # _, local_features_emb = self.local_dynamic_encoder(local_features_emb)
         # local_features_emb = local_features_emb[-1].unsqueeze(1)
 
@@ -322,11 +322,7 @@ class NBST(nn.Module):
         attn_features = self.ds_attention_mlp(torch.cat(
             (static_attention @ stations_ds_features, dynamic_attention @ stations_ds_features), dim=-1)
                                               .view(batch_size, -1))
-        
-        # pm25本身规律
-        # _, pm25_hidden = self.pm25_gru(station_pm25_emb.view(-1, seq_len, self.emb_dim))
-        # pm25_hidden = pm25_hidden[-1].view(batch_size, -1, self.hidden_dim)
-        # pm25_hidden = torch.sum(pm25_hidden, dim=1, keepdim=True).view(batch_size, self.hidden_dim)
+
         # 预测
         pred_in = torch.cat((static_output, dynamic_output, attn_features), dim=-1)
         pred_out = self.pred_mlp(pred_in)
