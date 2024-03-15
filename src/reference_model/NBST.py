@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch import nn
-from torch.nn import GRU, Sequential, Linear, Dropout, ReLU, Tanh
+from torch.nn import GRU, Sequential, Linear, Dropout, Tanh, SiLU
 from torch.nn.functional import l1_loss, binary_cross_entropy_with_logits
 
 
@@ -23,10 +23,11 @@ class NBSTLoss(nn.Module):
 
 
 class StaticAttention(nn.Module):
-    def __init__(self, head_num, input_size):
+    def __init__(self, head_num, input_size, dropout):
         super(StaticAttention, self).__init__()
         self.input_size = input_size
         self.head_num = head_num
+        self.dropout = dropout
 
         self.multi_head_q = nn.Sequential(Linear(input_size, head_num * input_size),
                                           nn.LayerNorm(head_num * input_size))  #
@@ -36,13 +37,18 @@ class StaticAttention(nn.Module):
                                           nn.LayerNorm(head_num * input_size))  #
 
         self.softmax = nn.Softmax(dim=-1)
+        self.layer_norm = nn.LayerNorm(input_size)
+        self.linear = nn.Sequential(Linear(input_size, input_size),
+                                    SiLU(),
+                                    Dropout(self.dropout),
+                                    Linear(input_size, input_size))
         self.multi_head_out = nn.Sequential(nn.LayerNorm(head_num * input_size),
                                             Linear(head_num * input_size, input_size),
                                             nn.LayerNorm(input_size))  #
         self.multi_head_att_out = nn.Sequential(Linear(head_num, 1),
                                                 nn.LayerNorm(1))  #
 
-    def forward(self, local, dist, sites, mask=None):
+    def forward(self, local, dist, sites):
         site_num = sites.size(-2)
         local = self.multi_head_q(local)
         sites = self.multi_head_v(sites)
@@ -57,10 +63,6 @@ class StaticAttention(nn.Module):
 
         u = local @ dist.transpose(-1, -2)
         u = u / np.power(site_num, 0.5)
-
-        if mask is not None:
-            mask = mask.repeat(self.head_num, 1, 1)
-            u = u.masked_fill(mask, -np.inf)
 
         attn = self.softmax(u)
         output = attn @ sites
@@ -78,20 +80,25 @@ class StaticAttention(nn.Module):
 
 
 class DynamicSelfAttention(nn.Module):
-    def __init__(self, seq_len, emb_dim, input_size):
+    def __init__(self, seq_len, emb_dim, input_size, dropout):
         super(DynamicSelfAttention, self).__init__()
         self.seq_len = seq_len
         self.emb_dim = emb_dim
         self.input_size = input_size
-        self.attn_layers = 4
+        self.dropout = dropout
 
         self.q_layer_norm = nn.Sequential(Linear(self.emb_dim, self.input_size), nn.LayerNorm(self.input_size))  #
         self.k_layer_norm = nn.Sequential(Linear(self.input_size, self.input_size), nn.LayerNorm(self.input_size))  #
         self.v_layer_norm = nn.Sequential(Linear(self.input_size, self.input_size), nn.LayerNorm(self.input_size))  #
         self.softmax = nn.Softmax(dim=-1)
-        self.layer_norm = nn.LayerNorm(self.input_size)
+        self.layer_norm_1 = nn.LayerNorm(self.input_size)
+        self.linear = nn.Sequential(Linear(self.input_size, self.input_size),
+                                    SiLU(),
+                                    Dropout(self.dropout),
+                                    Linear(self.input_size, self.input_size))
+        self.layer_norm_2 = nn.LayerNorm(self.input_size)
 
-    def forward(self, q, k, v, mask=None):
+    def forward(self, q, k, v):
         site_num = k.size(2)
         q = self.q_layer_norm(q.reshape(-1, site_num, self.emb_dim))
         k = self.k_layer_norm(k.reshape(-1, site_num, self.input_size))
@@ -100,19 +107,12 @@ class DynamicSelfAttention(nn.Module):
         u = q @ k.transpose(-2, -1)
         u = u / np.power(site_num, 0.5)
 
-        if mask is not None:
-            mask = mask.repeat(self.seq_len, 1, 1)
-            u = u.masked_fill(mask, -np.inf)
-
         attn = self.softmax(u)
         attn_output = attn @ v
 
-        attn_output = attn_output + v
-
-        # station_in = (attn_output.view(-1, self.seq_len, site_num, self.input_size).permute(0, 2, 1, 3)
-        #               .contiguous().view(-1, site_num, self.input_size * self.seq_len))
-        # station_output = self.station_out(station_in)
-        attn_output = self.layer_norm(attn_output)
+        attn_output = self.layer_norm_1(attn_output + v)
+        attn_output = self.linear(attn_output)
+        attn_output = self.layer_norm_2(attn_output + v)
         station_output = attn_output.view(-1, self.seq_len, site_num, self.input_size)
         return station_output
 
@@ -139,86 +139,85 @@ class NBST(nn.Module):
         self.hour_emb = nn.Embedding(24, self.emb_dim)
 
         self.station_dist_mlp = nn.Sequential(Linear(self.node_in_dim + 2, self.hidden_dim * 2),
-                                              Tanh(),
+                                              SiLU(),
                                               Linear(self.hidden_dim * 2, self.hidden_dim),
-                                              Tanh(),
+                                              SiLU(),
                                               nn.LayerNorm(self.hidden_dim))  #
 
         self.static_mlp = nn.Sequential(Linear(self.node_in_dim, self.hidden_dim * 2),
-                                        Tanh(),
+                                        SiLU(),
                                         Linear(self.hidden_dim * 2, self.hidden_dim),
-                                        Tanh(),
+                                        SiLU(),
                                         nn.LayerNorm(self.hidden_dim))  #
 
-        self.static_attn_layers = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim)])
+        self.static_attn_layers = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)])
         for _ in range(self.attn_layer - 1):
-            self.static_attn_layers.append(StaticAttention(self.head_num, self.hidden_dim))
+            self.static_attn_layers.append(StaticAttention(self.head_num, self.hidden_dim, self.dropout))
         self.static_attn_out_fc = nn.Sequential(Linear(self.attn_layer * self.hidden_dim, 2 * self.hidden_dim),
-                                                Tanh(),
+                                                SiLU(),
                                                 Dropout(self.dropout),
                                                 Linear(2 * self.hidden_dim, self.hidden_dim),
-                                                Tanh(),
-                                                Dropout(self.dropout),
+                                                SiLU(),
                                                 nn.LayerNorm(self.hidden_dim))
         # self.static_attention = StaticAttention(self.head_num, self.hidden_dim)
 
-        self.station_dynamic_mlp = Sequential(Linear(self.in_dim + self.emb_dim * 6, self.hidden_dim * 2),
-                                              Tanh(),
-                                              Linear(self.hidden_dim * 2, self.hidden_dim),
-                                              Tanh(),
-                                              nn.LayerNorm(self.hidden_dim))  #
+        # self.station_dynamic_mlp = Sequential(Linear(self.in_dim + self.emb_dim * 6, self.hidden_dim * 2),
+        #                                       SiLU(),
+        #                                       Linear(self.hidden_dim * 2, self.hidden_dim),
+        #                                       SiLU(),
+        #                                       nn.LayerNorm(self.hidden_dim))  #
 
-        self.local_dynamic_mlp = Sequential(Linear(self.in_dim + self.emb_dim * 5, self.hidden_dim * 2),
-                                            Tanh(),
-                                            Linear(self.hidden_dim * 2, self.hidden_dim),
-                                            Tanh(),
-                                            nn.LayerNorm(self.hidden_dim))  #
+        self.dynamic_mlp = Sequential(Linear(self.in_dim + self.emb_dim * 5, self.hidden_dim * 2),
+                                      SiLU(),
+                                      Linear(self.hidden_dim * 2, self.hidden_dim),
+                                      SiLU(),
+                                      nn.LayerNorm(self.hidden_dim))  #
 
         self.station_dynamic_attn_layers = nn.ModuleList(
-            [DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim)])
+            [DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.dropout)])
         self.local_dynamic_attn_layers = nn.ModuleList(
-            [DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim)])
+            [DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.dropout)])
         for _ in range(self.attn_layer - 1):
             self.station_dynamic_attn_layers.append(
-                DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim))
+                DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.dropout))
             self.local_dynamic_attn_layers.append(
-                DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim))
-        # self.station_dynamic_attn = DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.gru_layer,
-        #                                                  self.dropout)
-        # self.local_dynamic_attn = DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.gru_layer,
-        #                                                self.dropout)
+                DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.dropout))
+        # self.station_dynamic_attn = DynamicSelfAttention(self.seq_len, self.emb_dim, self.hidden_dim, self.dropout)
+        # self.local_dynamic_attn = DynamicSelfAttention(self.seq_len, self.hidden_dim, self.hidden_dim, self.dropout)
         self.station_attn_out = nn.Sequential(nn.LayerNorm(self.seq_len * self.hidden_dim),
                                               Linear(self.hidden_dim * self.seq_len, self.hidden_dim),
+                                              SiLU(),
                                               Dropout(dropout),
                                               nn.LayerNorm(self.hidden_dim))  #
         self.local_attn_out = nn.Sequential(nn.LayerNorm(self.seq_len * self.hidden_dim),
                                             Linear(self.hidden_dim * self.seq_len, self.hidden_dim),
+                                            SiLU(),
                                             Dropout(dropout),
                                             nn.LayerNorm(self.hidden_dim))  #
 
-        self.dynamic_attn_layers = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim)])
+        self.dynamic_attn_layers = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)])
         for _ in range(self.attn_layer - 1):
-            self.dynamic_attn_layers.append(StaticAttention(self.head_num, self.hidden_dim))
+            self.dynamic_attn_layers.append(StaticAttention(self.head_num, self.hidden_dim, self.dropout))
         # self.dynamic_attention = StaticAttention(self.head_num, self.hidden_dim)
         self.dynamic_attn_out_fc = nn.Sequential(Linear(self.attn_layer * self.hidden_dim, 2 * self.hidden_dim),
-                                                 Tanh(),
+                                                 SiLU(),
                                                  Dropout(self.dropout),
                                                  Linear(2 * self.hidden_dim, self.hidden_dim),
-                                                 Tanh(),
-                                                 Dropout(self.dropout),
+                                                 SiLU(),
                                                  nn.LayerNorm(self.hidden_dim))
 
         self.stations_mlp = nn.Sequential(Linear(self.hidden_dim * 2, self.hidden_dim * 2),
-                                          Tanh(),
+                                          SiLU(),
                                           Dropout(self.dropout),
                                           Linear(self.hidden_dim * 2, self.hidden_dim),
-                                          Tanh(),
-                                          Dropout(self.dropout),
+                                          SiLU(),
                                           nn.LayerNorm(self.hidden_dim))
 
         self.ds_attention_mlp = nn.Sequential(Linear(self.hidden_dim * 2, self.hidden_dim),
-                                              Tanh(),
+                                              SiLU(),
                                               nn.LayerNorm(self.hidden_dim))
+        
+        # self.pm25_gru = GRU(self.emb_dim, self.hidden_dim, num_layers=2, batch_first=True, dropout=self.dropout)
 
         self.pred_mlp = Sequential(Linear(3 * self.hidden_dim, self.hidden_dim * 2),
                                    Tanh(),
@@ -260,14 +259,13 @@ class NBST(nn.Module):
                            .permute(1, 0, 2).contiguous().view(batch_size, -1))
         static_output = self.static_attn_out_fc(local_attn_outs)
 
-        station_features = torch.cat((station_features, station_weather_emb,
-                                      station_wind_direc_emb, station_pm25_emb,
+        station_features = torch.cat((station_features, station_weather_emb, station_wind_direc_emb,
                                       hour_emb, day_emb, month_emb), dim=-1)
         local_features = torch.cat((local_features, local_weather_emb, local_wind_direc_emb,
                                     hour_emb[:, :, [0]], day_emb[:, :, [0]], month_emb[:, :, [0]]), dim=-1)
         # 站点动态信息提取
-        local_features_emb = self.local_dynamic_mlp(local_features)
-        station_features_emb = self.station_dynamic_mlp(station_features)
+        local_features_emb = self.dynamic_mlp(local_features)
+        station_features_emb = self.dynamic_mlp(station_features)
         # VERSION1: 经过测试具有稳定的训练效果
         # station_mul = []
         # features_emb = []
@@ -312,7 +310,7 @@ class NBST(nn.Module):
         local_feature_outs = []
         for layer in self.dynamic_attn_layers:
             dynamic_attention, local_features_emb = layer(local_features_emb,
-                                                          station_features_emb + station_dist_emb,
+                                                          station_features_emb,
                                                           station_features_emb)
             local_feature_outs.append(local_features_emb)
         local_feature_outs = (torch.stack(local_feature_outs, dim=0).view(self.attn_layer, batch_size, -1)
@@ -324,7 +322,12 @@ class NBST(nn.Module):
         attn_features = self.ds_attention_mlp(torch.cat(
             (static_attention @ stations_ds_features, dynamic_attention @ stations_ds_features), dim=-1)
                                               .view(batch_size, -1))
-        # attn_features = torch.sum(attn_features, dim=1).unsqueeze(1)  # -1, 1, hidden_dim
+        
+        # pm25本身规律
+        # _, pm25_hidden = self.pm25_gru(station_pm25_emb.view(-1, seq_len, self.emb_dim))
+        # pm25_hidden = pm25_hidden[-1].view(batch_size, -1, self.hidden_dim)
+        # pm25_hidden = torch.sum(pm25_hidden, dim=1, keepdim=True).view(batch_size, self.hidden_dim)
+        # 预测
         pred_in = torch.cat((static_output, dynamic_output, attn_features), dim=-1)
         pred_out = self.pred_mlp(pred_in)
         pred = pred_out.view(batch_size, seq_len, -1)
