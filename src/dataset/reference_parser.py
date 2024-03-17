@@ -286,6 +286,62 @@ class ADAINParser(data.Dataset):
                 self.station_nodes[index], self.station_features[index], self.station_dist[index])
 
 
+class ReferenceMLParser:
+    def __init__(self, config, node_ids: list = None, mode: str = 'train'):
+        self.mode = mode
+        self.nodes = np.load(os.path.join(config.dataset_dir, 'UrbanAir_loc.npy'))
+        self.features = np.load(os.path.join(config.dataset_dir, 'UrbanAir_features.npy'))
+        self.pm25 = self.features[:, :, :, 0]
+        self.time_len = self.features.shape[1]
+        self._calc_mean_std()
+
+        self.get_stations(node_ids)
+        features, nodes = self.split_station_and_local(node_ids)
+        self.pm25_label = features[:, :, :, 0].reshape(-1, 1)
+        self.features = np.concatenate((features[:, :, :, 1:], nodes), axis=-1)
+
+        self.features_std = self.features.std(axis=(2, 1, 0))
+        self.features_mean = self.features.mean(axis=(2, 1, 0))
+        self.feature_scaler = StandardScaler(mean=self.features_mean, std=self.features_std)
+        self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
+
+        self.features = self.feature_scaler.normalize(self.features)
+        self.pm25_label = self.pm25_scaler.normalize(self.pm25_label)
+
+        self.features = self.features.reshape(self.features.shape[0] * self.time_len, -1)
+
+    def _calc_mean_std(self):
+        self.pm25_mean = self.pm25.mean()
+        self.pm25_std = self.pm25.std()
+
+    def get_stations(self, node_ids: list):
+        if self.mode == 'train':
+            self.nodes = self.nodes[node_ids]
+            self.features = self.features[:, :, node_ids]
+
+    def split_station_and_local(self, node_ids):
+        node_num = len(node_ids)
+        features = []
+        nodes = []
+        if self.mode == 'train':
+            for i in range(self.features.shape[0]):
+                for j in range(node_num):
+                    features.append(self.features[i, :, j].reshape(1, self.time_len, 1, -1))
+                    nodes.append(self.nodes[j].reshape(1, 1, 1, -1).repeat(repeats=self.time_len, axis=1))
+            features = np.concatenate(features, axis=0)
+            nodes = np.concatenate(nodes, axis=0)
+        elif self.mode == 'valid':
+            for i in node_ids:
+                features.append(self.features[:, :, i].reshape(self.features.shape[0], self.time_len, 1, -1))
+                nodes.append(np.tile(self.nodes[i].reshape(1, 1, 1, -1), (self.features.shape[0], self.time_len, 1, 1)))
+            features = np.concatenate(features, axis=0)
+            nodes = np.concatenate(nodes, axis=0)
+        return features, nodes
+
+    def get_data(self):
+        return self.features, self.pm25_label
+
+
 if __name__ == '__main__':
     parser = ADAINParser(ReferConfig(config_filename='refer_base_config.yaml'), [2, 5, 6, 8, 10, 11], mode='train')
     a = parser.__getitem__(1)

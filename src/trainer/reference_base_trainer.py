@@ -4,13 +4,19 @@ import shutil
 import arrow
 import numpy as np
 import torch
+from joblib import dump
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import KFold
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.svm import SVR
 from torch.utils.data import DataLoader
+from polire import IDW
 
-from src.dataset.reference_parser import NBSTParser, ADAINParser
+from src.dataset.reference_parser import NBSTParser, ADAINParser, ReferenceMLParser
 from src.utils.config import ReferConfig
 from src.utils.logger import TrainLogger
-from src.utils.metrics import get_metrics, get_class_metrics
+from src.utils.metrics import get_metrics
 from src.utils.utils import get_mean_std
 
 
@@ -123,7 +129,8 @@ class ReferenceBaseTrainer:
             if not os.path.exists(exp_dir):
                 os.makedirs(exp_dir)
             if exp > 0:
-                last_exp_filepath = os.path.join(self.record_dir, f'exp_{exp-1}', f'model_{self.config.model_name}.pth')
+                last_exp_filepath = os.path.join(self.record_dir, f'exp_{exp - 1}',
+                                                 f'model_{self.config.model_name}.pth')
                 self.model.load_state_dict(torch.load(last_exp_filepath))
             # create data loader
             if self.config.dataset_name == 'UrbanAir':
@@ -266,5 +273,159 @@ class ReferenceBaseTrainer:
                                        np.array(self.exp_mae_list),
                                        np.array(self.exp_csi_list), np.array(self.exp_pod_list),
                                        np.array(self.exp_far_list)), axis=0)
+        np.save(os.path.join(self.record_dir, 'all_exp_res.npy'), metrics_data)
+        self.logger.debug('Experiments finished.')
+
+
+class MLBaseTrainer:
+    def __init__(self, mode):
+        self.pm25_scaler = None
+        self.config = ReferConfig()
+        self.mode = mode
+        self._create_records()
+        self.logger = TrainLogger(os.path.join(self.record_dir, 'progress.log')).logger
+
+        self.model = self._get_model()
+
+        self.mae_loss_list = []
+        self.rmse_loss_list = []
+        self.mae_list = []
+        self.rmse_list = []
+
+        self.exp_rmse_loss_list = []
+        self.exp_mae_loss_list = []
+        self.exp_rmse_list = []
+        self.exp_mae_list = []
+
+    def _get_model(self):
+        if self.config.model_name == 'KNN':
+            return KNeighborsRegressor(
+                algorithm='auto',
+                n_neighbors=5,
+                leaf_size=30,
+                metric='minkowski',
+                n_jobs=None,
+                p=2,
+                weights='uniform')
+        elif self.config.model_name == 'RF':
+            return RandomForestRegressor(
+                n_estimators=100,
+                max_depth=None,
+                min_samples_split=2,
+                min_samples_leaf=1,
+                n_jobs=15,
+                bootstrap=True)
+        elif self.config.model_name == 'SVR':
+            return SVR(
+                kernel='rbf',
+                C=1,
+                epsilon=0.1,
+                max_iter=5000)
+        elif self.config.model_name == 'XGB':
+            return GradientBoostingRegressor()
+        elif self.config.model_name == 'IDW':
+            return IDW(exponent=3)
+        else:
+            raise NotImplementedError(f'Model {self.config.model_name} not implemented.')
+
+    def _create_records(self):
+        """
+        Create the records directory for experiments
+        :return:
+        """
+        exp_datetime = arrow.now().format('YYYYMMDDHHmmss')
+        self.record_dir = os.path.join(self.config.records_dir, f'{self.config.model_name}_{self.mode}_{exp_datetime}')
+        if not os.path.exists(self.record_dir):
+            os.makedirs(self.record_dir)
+
+    def train_model(self, train_input, train_target, test_input, test_target):
+        if self.config.model_name == 'IDW':
+            train_target = np.asarray(train_target, dtype=np.float16).ravel()
+        self.model.fit(np.asarray(train_input, dtype=np.float16), train_target)
+        test_pred = self.model.predict(np.asarray(test_input, dtype=np.float16))
+        rmse = mean_squared_error(test_pred, test_target, squared=False)
+        mae = mean_absolute_error(test_pred, test_target)
+        return (rmse, mae), test_pred
+
+    def run(self):
+        self.logger.debug('Start experiment...')
+        splitter = KFold(n_splits=self.config.exp_times, shuffle=True, random_state=self.config.seed)
+        all_stations = list(range(30))
+        for exp, (train_ids, test_ids) in enumerate(splitter.split(all_stations)):
+            self.logger.info(f'Current experiment : {exp}')
+            exp_dir = os.path.join(self.record_dir, f'exp_{exp}')
+            if not os.path.exists(exp_dir):
+                os.makedirs(exp_dir)
+            if self.config.dataset_name == 'UrbanAir':
+                train_dataset = ReferenceMLParser(config=self.config, node_ids=train_ids, mode='train')
+                test_dataset = ReferenceMLParser(config=self.config, node_ids=test_ids, mode='valid')
+                self.pm25_scaler = test_dataset.pm25_scaler
+            else:
+                self.logger.error("Unsupported dataset type")
+                raise ValueError('Unknown dataset')
+
+            train_input, train_target = train_dataset.get_data()
+            test_input, test_target = test_dataset.get_data()
+            train_input_splices = np.split(train_input, 12, axis=0)
+            train_target_splices = np.split(train_target, 12, axis=0)
+            test_input_splices = np.split(test_input, 12, axis=0)
+            test_target_splices = np.split(test_target, 12, axis=0)
+            self.mae_loss_list = []
+            self.rmse_loss_list = []
+            self.mae_list = []
+            self.rmse_list = []
+            target = []
+            pred = []
+
+            for train_in, train_tar, test_in, test_tar in zip(train_input_splices, train_target_splices,
+                                                              test_input_splices, test_target_splices):
+                (rmse_loss, mae_loss), test_pred = self.train_model(train_in, train_tar,
+                                                                    test_in, test_tar)
+
+                test_tar = self.pm25_scaler.denormalize(test_tar)
+                test_pred = self.pm25_scaler.denormalize(test_pred)
+                rmse = mean_squared_error(test_pred, test_tar, squared=False)
+                mae = mean_absolute_error(test_pred, test_tar)
+
+                self.rmse_loss_list.append(rmse_loss)
+                self.mae_loss_list.append(mae_loss)
+                self.rmse_list.append(rmse)
+                self.mae_list.append(mae)
+                target.append(test_tar)
+                pred.append(test_pred)
+
+                self.logger.info('\nRMSE_LOSS: %0.2f, MAE_LOSS: %0.2f  \n'
+                                 'RMSE: %0.2f, MAE: %0.2f' % (rmse_loss, mae_loss, rmse, mae))
+
+            self.exp_mae_loss_list.append(sum(self.mae_loss_list) / len(self.mae_loss_list))
+            self.exp_rmse_loss_list.append(sum(self.rmse_loss_list) / len(self.rmse_loss_list))
+            self.exp_mae_list.append(sum(self.mae_list) / len(self.mae_list))
+            self.exp_rmse_list.append(sum(self.rmse_list) / len(self.rmse_list))
+            self.logger.info('\n Experiment time: %d, results: \n'
+                             'RMSE_Loss: %0.4f, MAE_Loss: %0.4f \n'
+                             'RMSE: %0.2f, MAE: %0.2f'
+                             % (exp, self.exp_rmse_loss_list[-1], self.exp_mae_loss_list[-1],
+                                self.exp_rmse_list[-1], self.exp_mae_list[-1]))
+
+            dump(self.model,
+                 os.path.join(exp_dir, f'model_{self.config.model_name}.joblib'))
+            # save prediction and label
+            if self.config.save_npy:
+                target = np.stack(target, axis=-1)
+                pred = np.stack(pred, axis=-1)
+                np.save(os.path.join(exp_dir, f'predict.npy'), pred)
+                np.save(os.path.join(exp_dir, f'label.npy'), target)
+                self.logger.info(f'Save model and results')
+            else:
+                self.logger.info(f'Save model')
+        self.logger.info("\n Finished all experiments: \n"
+                         'rmse_loss | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_rmse_loss_list)) +
+                         'mae_loss  | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_mae_loss_list)) +
+                         'RMSE      | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_rmse_list)) +
+                         'MAE       | mean: %0.4f std: %0.4f' % (get_mean_std(self.exp_mae_list)))
+        metrics_data = np.concatenate((np.array(self.exp_rmse_loss_list),
+                                       np.array(self.exp_mae_loss_list),
+                                       np.array(self.exp_rmse_list),
+                                       np.array(self.exp_mae_list)), axis=0)
         np.save(os.path.join(self.record_dir, 'all_exp_res.npy'), metrics_data)
         self.logger.debug('Experiments finished.')

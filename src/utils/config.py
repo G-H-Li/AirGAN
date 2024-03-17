@@ -183,7 +183,7 @@ class ReferConfig:
             sys.exit("No config file found")
         self._read_experiment_config()
         # read model hyperparameters
-        if self.model_name in ['ADAIN', 'NBST']:
+        if self.model_name in ['ADAIN', 'NBST', 'KNN', 'RF', 'SVR', 'IDW', 'XGB']:
             self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
             with open(self.model_config_path) as f:
                 self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)
@@ -237,22 +237,26 @@ class ReferConfig:
         Read general hyperparameter config
         :return:
         """
-        hyper_params_config = self.hyperparameters['general_hyper_params']
-        self.is_early_stop = hyper_params_config['is_early_stop']
-        self.early_stop = hyper_params_config['early_stop']
-        self.seq_len = hyper_params_config['seq_len']
-        self.batch_size = hyper_params_config['batch_size']
-        self.epochs = hyper_params_config['epochs']
-        self.exp_times = hyper_params_config['exp_times']
-        self.weight_decay = hyper_params_config['weight_decay']
-        self.lr = hyper_params_config['lr']
+        if self.hyperparameters is not None and self.model_name in ['ADAIN', 'NBST']:
+            hyper_params_config = self.hyperparameters['general_hyper_params']
+            self.is_early_stop = hyper_params_config['is_early_stop']
+            self.early_stop = hyper_params_config['early_stop']
+            self.seq_len = hyper_params_config['seq_len']
+            self.batch_size = hyper_params_config['batch_size']
+            self.epochs = hyper_params_config['epochs']
+            self.exp_times = hyper_params_config['exp_times']
+            self.weight_decay = hyper_params_config['weight_decay']
+            self.lr = hyper_params_config['lr']
+        elif self.hyperparameters is not None and self.model_name in ['KNN', 'RF', 'SVR', 'IDW', 'XGB']:
+            hyper_params_config = self.hyperparameters['general_hyper_params']
+            self.exp_times = hyper_params_config['exp_times']
 
     def _read_model_params_config(self):
         """
         Read model hyperparameter config
         :return:
         """
-        if 'model_hyper_params' not in self.hyperparameters:
+        if self.hyperparameters is None or 'model_hyper_params' not in self.hyperparameters:
             return None
         model_params_config = self.hyperparameters['model_hyper_params']
         if 'feature_process' in model_params_config:
