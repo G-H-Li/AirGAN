@@ -2,24 +2,40 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import GRU, Sequential, Linear, Dropout, Tanh, SiLU
-from torch.nn.functional import l1_loss, binary_cross_entropy_with_logits
+from torch.nn.functional import l1_loss, binary_cross_entropy_with_logits, cross_entropy
 
 
 class NBSTLoss(nn.Module):
-    def __init__(self, pm25_std, pm25_mean, alpha):
+    def __init__(self, pm25_std, pm25_mean, alpha, device):
         super(NBSTLoss, self).__init__()
         self.pm25_std = pm25_std
         self.pm25_mean = pm25_mean
         self.alpha = alpha
+        self.device = device
+        self.class_num = 6
+
+    def map_to_class(self, tensor):
+        tensor_mapped = torch.zeros_like(tensor).to(self.device)
+        tensor_mapped[(tensor >= 35) & (tensor < 75)] = 1
+        tensor_mapped[(tensor >= 75) & (tensor < 115)] = 2
+        tensor_mapped[(tensor >= 115) & (tensor < 150)] = 3
+        tensor_mapped[(tensor >= 150) & (tensor < 250)] = 4
+        tensor_mapped[tensor >= 250] = 5
+        identity_matrix = torch.eye(self.class_num).to(self.device)
+        return identity_matrix[tensor_mapped.int()]
 
     def forward(self, output, target):
         loss1 = l1_loss(output, target)
-        output_val = output * self.pm25_std + self.pm25_mean
-        target_val = target * self.pm25_std + self.pm25_mean
-        output_val = (output_val <= 75).float()
-        target_val = (target_val <= 75).float()
-        loss2 = binary_cross_entropy_with_logits(output_val, target_val)
-        return loss1 + self.alpha * loss2
+        # output_val = output * self.pm25_std + self.pm25_mean
+        # target_val = target * self.pm25_std + self.pm25_mean
+        # output_val = (output_val <= 75).float()
+        # target_val = (target_val <= 75).float()
+        # output_val = self.map_to_class(output_val)
+        # target_val = self.map_to_class(target_val)
+        loss2 = cross_entropy(torch.cosine_similarity(output, target, dim=1),
+                              torch.cosine_similarity(target, target, dim=1))
+        # loss2 = cross_entropy(output, target)
+        return (1 - self.alpha) * loss1 + self.alpha * loss2
 
 
 class StaticAttention(nn.Module):

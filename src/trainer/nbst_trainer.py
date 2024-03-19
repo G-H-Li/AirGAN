@@ -35,7 +35,7 @@ class NBSTTrainer(ReferenceBaseTrainer):
     def _get_criterion(self):
         # return nn.L1Loss()
         # return nn.MSELoss()
-        return NBSTLoss(self.pm25_std, self.pm25_mean, self.config.alpha)
+        return NBSTLoss(self.pm25_std, self.pm25_mean, self.config.alpha, self.device)
 
     def _get_optimizer(self):
         # return torch.optim.Adam(self.model.parameters(),

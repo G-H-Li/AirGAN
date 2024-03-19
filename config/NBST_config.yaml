@@ -18,4 +18,4 @@ model_hyper_params:
     head_num: 3
     attn_layer: 4
     clip: 10
-    alpha: 0.7
+    alpha: 0
