@@ -150,16 +150,18 @@ class STTrainer(ForecastBaseTrainer):
                          self.config.edge_hidden,
                          self.config.head_nums)
         elif self.config.model_name == 'AirFormer':
+            assignment = np.load(os.path.join(self.config.dataset_dir, 'KnowAir_assignment.npy'))
             return AirFormer(self.config.hist_len,
                              self.config.pred_len,
-                             self.in_dim,
+                             17,
                              self.city_num,
                              self.config.batch_size,
                              self.device,
                              self.config.dropout,
                              self.config.head_nums,
                              self.config.hidden_channels,
-                             self.config.blocks)
+                             self.config.blocks,
+                             assignment)
         elif self.config.model_name == 'DGCRN':
             return DGCRN(self.config.gcn_pred_len,
                          self.city_num,
@@ -310,8 +312,13 @@ class STTrainer(ForecastBaseTrainer):
                                 drop_last=True, pin_memory=True, num_workers=self.config.num_workers)
 
         self.model.load_state_dict(torch.load(model_path))
-        self.model.hist_len = test_hist_len
-        self.model.pred_len = test_pred_len
+        if test_hist_len != self.model.hist_len:
+            raise ValueError('test history_seq_len does not match the model history_seq_len')
+        pred_count = test_pred_len // self.model.pred_len
+        remainder = test_pred_len % self.model.pred_len
+        pred_count = pred_count if remainder == 0 else pred_count + 1
+        all_len = self.model.pred_len + self.model.hist_len
+
         self.model.eval()
         predict_list = []
         label_list = []
@@ -319,13 +326,25 @@ class STTrainer(ForecastBaseTrainer):
         start_time = time()
         with torch.no_grad():
             for batch_idx, data in tqdm(enumerate(dataloader)):
+                pred = []
                 pm25, feature, time_feature = data
                 pm25 = pm25.to(self.device)
                 feature = feature.to(self.device)
                 time_feature = time_feature.to(self.device)
                 pm25_label = pm25[:, test_hist_len:]
                 pm25_hist = pm25[:, :test_hist_len]
-                pm25_pred = self.model(pm25_hist, feature, time_feature)
+                # pm25_pred = self.model(pm25_hist, feature, time_feature)
+                for i in range(pred_count):
+                    features = feature[:, i*test_hist_len:i*test_hist_len+all_len]
+                    time_features = time_feature[:, i * test_hist_len:i * test_hist_len + all_len]
+                    pm25_pred = self.model(pm25_hist, features, time_features)
+                    pred.append(pm25_pred)
+                    pm25_hist = torch.cat([pm25_hist, pm25_pred], dim=1)[:, -test_hist_len:]
+
+                if remainder != 0:
+                    pm25_pred = torch.cat(pred, dim=1)[:, :remainder-self.model.pred_len]
+                else:
+                    pm25_pred = torch.cat(pred, dim=1)
 
                 pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
                 pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())

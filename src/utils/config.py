@@ -32,7 +32,7 @@ class Config(object):
             sys.exit("No config file found")
         self._read_experiment_config()
         # read model hyperparameters
-        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN', 'CW_GAN', 'SimST', 'ADAIN']:
+        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN', 'AirFormer', 'SimST', 'ADAIN']:
             self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
             with open(self.model_config_path) as f:
                 self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)

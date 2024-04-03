@@ -12,8 +12,8 @@ from src.utils.utils import load_pickle
 
 
 def load_air_former_data():
-    a = np.load(os.path.join(Config().dataset_dir, 'UrbanAir_fold_0_train_station_dist_data.npy'))
-    a = torch.from_numpy(a[:, 0])
+    a = np.load(os.path.join(Config().dataset_dir, 'KnowAir_assignment.npy'))
+    a = torch.from_numpy(a[0])
     row = a.transpose(1, 0)
     row_sums = row.sum(axis=1)
     print(row_sums)

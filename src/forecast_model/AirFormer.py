@@ -28,8 +28,8 @@ class AirEmbedding(nn.Module):
     def forward(self, x):
         # x_wdir = self.embed_wdir(x[..., 0])
         # x_weather = self.embed_weather(x[..., 1])
-        x_hour = self.embed_hour(x[..., 2])
-        x_day = self.embed_weekday(x[..., 3])
+        x_hour = self.embed_hour(x[..., 0])
+        x_day = self.embed_weekday(x[..., 1] - 1)
         # out = torch.cat((x_wdir, x_weather, x_day, x_hour), -1)
         out = torch.cat((x_hour, x_day), -1)
         return out
@@ -126,13 +126,14 @@ class StochasticModel(nn.Module):
         return z, mus, sigmas
 
 
-class AirFormer:
+class AirFormer(nn.Module):
     """
     the AirFormer model
     """
 
-    def __init__(self, hist_len, pred_len, in_dim, city_num, batch_size, device,
-                 dropout, head_nums, hidden_channels, blocks):
+    def __init__(self, hist_len, pred_len, in_dim, city_num, batch_size, device, dropout, head_nums, hidden_channels,
+                 blocks, assignment):
+        super(AirFormer, self).__init__()
         self.dropout = dropout
         self.in_dim = in_dim
         self.head_nums = head_nums
@@ -156,7 +157,8 @@ class AirFormer:
         self.dartboard = 0
         self.mlp_expansion = 2
 
-        self.assignment, self.mask = self.get_dartboard_info(self.dartboard)
+        # self.assignment, self.mask = self.get_dartboard_info(self.dartboard)
+        self.assignment = torch.from_numpy(assignment).float().to(self.device)
 
         # a conv for converting the input to the embedding
         self.start_conv = nn.Conv2d(in_channels=self.in_dim,
@@ -177,7 +179,7 @@ class AirFormer:
                                          heads=self.head_nums,
                                          mlp_dim=self.hidden_channels * self.mlp_expansion,
                                          assignment=self.assignment,
-                                         mask=self.mask,
+                                         # mask=self.mask,
                                          dropout=self.dropout))
 
             self.bn.append(nn.BatchNorm2d(hidden_channels))
@@ -210,28 +212,29 @@ class AirFormer:
                                     kernel_size=(1, 1),
                                     bias=True)
 
-    def get_dartboard_info(self, dartboard):
-        """
-        get dartboard-related attributes
-        """
-        path_assignment = 'data/local_partition/' + \
-                          dartboard_map[dartboard] + '/assignment.npy'
-        path_mask = 'data/local_partition/' + \
-                    dartboard_map[dartboard] + '/mask.npy'
-        assignment = torch.from_numpy(
-            np.load(path_assignment)).float().to(self.device)
-        mask = torch.from_numpy(
-            np.load(path_mask)).bool().to(self.device)
-        return assignment, mask
+    # def get_dartboard_info(self, dartboard):
+    #     """
+    #     get dartboard-related attributes
+    #     """
+    #     path_assignment = 'data/local_partition/' + \
+    #                       dartboard_map[dartboard] + '/assignment.npy'
+    #     path_mask = 'data/local_partition/' + \
+    #                 dartboard_map[dartboard] + '/mask.npy'
+    #     assignment = torch.from_numpy(
+    #         np.load(path_assignment)).float().to(self.device)
+    #     mask = torch.from_numpy(
+    #         np.load(path_mask)).bool().to(self.device)
+    #     return assignment, mask
 
-    def forward(self, inputs, supports=None):
+    def forward(self, pm25_hist, feature, time_feature, supports=None):
         """
         inputs: the historical data
         supports: adjacency matrix (actually our method doesn't use it)
                 Including adj here is for consistency with GNN-based methods
         """
-        x_embed = self.embedding_air(inputs[..., 11:15].long())
-        x = torch.cat((inputs[..., :11], x_embed, inputs[..., 15:]), -1)
+        x_embed = self.embedding_air(time_feature[..., :2].int())
+        x_embed = x_embed.view(self.batch_size, 1, 1, -1).repeat(1, self.hist_len, self.city_num, 1)
+        x = torch.cat((pm25_hist, feature[:, :self.hist_len], x_embed), -1)
 
         x = x.permute(0, 3, 2, 1)  # [b, c, n, t]
         x = self.start_conv(x)
@@ -246,31 +249,29 @@ class AirFormer:
 
         d = torch.stack(d)  # [num_blocks, b, c, n, t]
 
-        # generation and inference
-        d_shift = [(nn.functional.pad(d[i], pad=(1, 0))[..., :-1])
-                   for i in range(len(d))]
-        d_shift = torch.stack(d_shift)  # [num_blocks, b, c, n, t]
-        z_p, mu_p, sigma_p = self.generative_model(
-            d_shift)  # run the generative model
-        z_q, mu_q, sigma_q = self.inference_model(
-            d)  # run the inference model
+        # # generation and inference
+        # d_shift = [(nn.functional.pad(d[i], pad=(1, 0))[..., :-1])
+        #            for i in range(len(d))]
+        # d_shift = torch.stack(d_shift)  # [num_blocks, b, c, n, t]
+        # z_p, mu_p, sigma_p = self.generative_model(d_shift)  # run the generative model
+        z_q, mu_q, sigma_q = self.inference_model(d)  # run the inference model
 
-        # compute kl divergence loss
-        p = torch.distributions.Normal(mu_p, sigma_p)
-        q = torch.distributions.Normal(mu_q, sigma_q)
-        kl_loss = torch.distributions.kl_divergence(
-            q, p).mean() * self.alpha
+        # # compute kl divergence loss
+        # p = torch.distributions.Normal(mu_p, sigma_p)
+        # q = torch.distributions.Normal(mu_q, sigma_q)
+        # kl_loss = torch.distributions.kl_divergence(
+        #     q, p).mean() * self.alpha
 
         # reshaping
         num_blocks, B, C, N, T = d.shape
-        z_p = z_p.permute(1, 0, 2, 3, 4).reshape(
-            B, -1, N, T)  # [B, num_blocks*C, N, T]
+        # z_p = z_p.permute(1, 0, 2, 3, 4).reshape(
+        #     B, -1, N, T)  # [B, num_blocks*C, N, T]
         z_q = z_q.permute(1, 0, 2, 3, 4).reshape(
             B, -1, N, T)  # [B, num_blocks*C, N, T]
 
         # reconstruction
-        x_rec = self.reconstruction_model(z_p)  # [b, c, n, t]
-        x_rec = x_rec.permute(0, 3, 2, 1)
+        # x_rec = self.reconstruction_model(z_p)  # [b, c, n, t]
+        # x_rec = x_rec.permute(0, 3, 2, 1)
 
         # prediction
         num_blocks, B, C, N, T = d.shape
@@ -279,7 +280,8 @@ class AirFormer:
         x_hat = torch.cat([d[..., -1:], z_q[..., -1:]], dim=1)
         x_hat = F.relu(self.end_conv_1(x_hat))
         x_hat = self.end_conv_2(x_hat)
-        return x_hat, x_rec, kl_loss
+        # return x_hat, x_rec, kl_loss
+        return x_hat
 
 
 class SpatialAttention(nn.Module):
@@ -334,11 +336,12 @@ class SpatialAttention(nn.Module):
 
         attn = attn.reshape(B, N, self.num_heads, 1,
                             self.num_sector) + self.relative_bias  # you can fuse external factors here as well
-        mask = self.mask.reshape(1, N, 1, 1, self.num_sector)
+        if self.mask is not None:
+            mask = self.mask.reshape(1, N, 1, 1, self.num_sector)
+            # masking
+            attn = attn.masked_fill_(mask, float("-inf"))
 
-        # masking
-        attn = attn.masked_fill_(mask, float(
-            "-inf")).reshape(B * N, self.num_heads, 1, self.num_sector).softmax(dim=-1)
+        attn = attn.reshape(B * N, self.num_heads, 1, self.num_sector).softmax(dim=-1)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
@@ -354,15 +357,17 @@ class DS_MSA(nn.Module):
                  heads,  # number of heads
                  mlp_dim,  # mlp dimension
                  assignment,  # dartboard assignment matrix
-                 mask,  # mask
+                 # mask,  # mask
                  dropout=0.):  # dropout rate
         super().__init__()
         self.layers = nn.ModuleList([])
         for i in range(depth):
             self.layers.append(nn.ModuleList([
                 SpatialAttention(dim, heads=heads, dropout=dropout,
-                                 assignment=assignment, mask=mask,
-                                 num_sectors=assignment.shape[-1]),
+                                 assignment=assignment,
+                                 # mask=mask,
+                                 num_sectors=assignment.shape[-1]
+                                 ),
                 PreNorm(dim, FeedForward(dim, mlp_dim, dropout=dropout))
             ]))
 
