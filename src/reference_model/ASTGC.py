@@ -2,7 +2,6 @@ import torch
 from pytorch_tcn import TCN
 from torch import nn
 from torch_geometric.nn import GCNConv
-from torch.nn import functional as F
 
 
 class ASTGC(nn.Module):
