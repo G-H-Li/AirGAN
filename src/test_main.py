@@ -1,12 +1,12 @@
 import os.path
 
-from src.trainer.gan_trainer import GAN_Trainer
 from src.trainer.sim_trainer import SimTrainer
-from src.trainer.st_trainer import STTrainer
+from src.trainer.for_trainer import ForTrainer
 
 if __name__ == '__main__':
     # trainer = GAN_Trainer(mode='test')
     # trainer = SimTrainer(mode='test')
-    trainer = STTrainer(mode='test')
-    trainer.run_test(os.path.join(trainer.config.results_dir, "model_AirFormer.pth"), 8, 24)
+    trainer = ForTrainer(mode='test')
+    trainer.run_test(os.path.join(trainer.config.results_dir, f"model_{trainer.config.model_name}.pth"),
+                     8, 24)
     # trainer.get_model_info()

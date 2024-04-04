@@ -21,7 +21,7 @@ from src.forecast_model.PM25_GNN import PM25_GNN
 from src.trainer.forecast_base_trainer import ForecastBaseTrainer
 
 
-class STTrainer(ForecastBaseTrainer):
+class ForTrainer(ForecastBaseTrainer):
     """
     Trainer class
     General purpose training:

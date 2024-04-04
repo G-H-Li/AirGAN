@@ -1,5 +1,6 @@
 from torch import nn
 
+
 class MCAM(nn.Module):
     def __init__(self):
         super(MCAM, self).__init__()

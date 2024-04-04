@@ -7,7 +7,7 @@ from src.reference_model.ADAIN import ADAIN
 from src.trainer.reference_base_trainer import ReferenceBaseTrainer
 
 
-class AdainTrainer(ReferenceBaseTrainer):
+class ReferTrainer(ReferenceBaseTrainer):
     def __init__(self):
         super().__init__()
         self.model = self._get_model()
