@@ -4,6 +4,8 @@ from torch.optim import Adam
 from tqdm import tqdm
 
 from src.reference_model.ADAIN import ADAIN
+from src.reference_model.ASTGC import ASTGC
+from src.reference_model.MCAM import MCAM
 from src.trainer.reference_base_trainer import ReferenceBaseTrainer
 
 
@@ -23,6 +25,18 @@ class ReferTrainer(ReferenceBaseTrainer):
                          in_dim,
                          node_in_dim,
                          self.config.dropout)
+        elif self.config.model_name == 'MCAM':
+            return MCAM(self.config.seq_len,
+                        in_dim,
+                        node_in_dim,
+                        self.device,
+                        self.config.hidden_dim)
+        elif self.config.model_name == 'ASTGC':
+            return ASTGC(self.config.seq_len,
+                         in_dim,
+                         node_in_dim,
+                         self.config.hidden_dim,
+                         self.device)
 
     def _get_optimizer(self):
         return Adam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)

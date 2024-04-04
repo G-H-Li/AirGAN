@@ -37,6 +37,10 @@ filepath:
     dataset_dir: D:\Project\AirGAN\data
     records_dir: D:\Project\AirGAN\records
     results_dir: D:\Project\AirGAN\results
+  Linux:
+    dataset_dir: /home/AirGAN/data
+    records_dir: /home/AirGAN/records
+    results_dir: /home/AirGAN/results
 
 # dataset info
 KnowAir:

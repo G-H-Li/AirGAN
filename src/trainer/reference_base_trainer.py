@@ -11,9 +11,8 @@ from sklearn.model_selection import KFold
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.svm import SVR
 from torch.utils.data import DataLoader
-from polire import IDW
 
-from src.dataset.reference_parser import NBSTParser, ADAINParser, ReferenceMLParser
+from src.dataset.reference_parser import NBSTParser, ReferParser, ReferenceMLParser
 from src.utils.config import ReferConfig
 from src.utils.logger import TrainLogger
 from src.utils.metrics import get_metrics
@@ -141,9 +140,9 @@ class ReferenceBaseTrainer:
                     self.pm25_std = test_dataset.pm25_std
                     self.pm25_mean = test_dataset.pm25_mean
                     self.criterion = self._get_criterion()
-                elif self.config.model_name == 'ADAIN':
-                    train_dataset = ADAINParser(config=self.config, node_ids=train_ids, mode='train')
-                    test_dataset = ADAINParser(config=self.config, node_ids=test_ids, mode='valid')
+                elif self.config.model_name in ['ADAIN', 'MCAM', 'ASTGC']:
+                    train_dataset = ReferParser(config=self.config, node_ids=train_ids, mode='train')
+                    test_dataset = ReferParser(config=self.config, node_ids=test_ids, mode='valid')
                     self.pm25_scaler = test_dataset.pm25_scaler
                 else:
                     self.logger.error("Unsupported model type")
@@ -323,8 +322,6 @@ class MLBaseTrainer:
                 max_iter=5000)
         elif self.config.model_name == 'XGB':
             return GradientBoostingRegressor()
-        elif self.config.model_name == 'IDW':
-            return IDW(exponent=3)
         else:
             raise NotImplementedError(f'Model {self.config.model_name} not implemented.')
 

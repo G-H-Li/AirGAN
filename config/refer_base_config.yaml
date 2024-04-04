@@ -17,7 +17,7 @@ experiment:
   # progress setting
   save_npy: True
   # model setting, optional: NBST, ADAIN, KNN, XGB, SVR, RF, ASTGC, MCAM
-  model_name: NBST
+  model_name: ASTGC
   # train seed, 0 means random
   seed: 1234
   # dataloader num worker
@@ -29,6 +29,10 @@ filepath:
     dataset_dir: D:\Project\AirGAN\data
     records_dir: D:\Project\AirGAN\records
     results_dir: D:\Project\AirGAN\results
+  Linux:
+    dataset_dir: /home/AirGAN/data
+    records_dir: /home/AirGAN/records
+    results_dir: /home/AirGAN/results
 
 # dataset info
 UrbanAir:

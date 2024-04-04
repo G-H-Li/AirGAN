@@ -163,9 +163,9 @@ class NBSTParser(data.Dataset):
                 self.station_nodes[index], self.station_features[index], self.station_emb_features[index])
 
 
-class ADAINParser(data.Dataset):
+class ReferParser(data.Dataset):
     def __init__(self, config, node_ids: list = None, mode: str = 'train'):
-        super(ADAINParser, self).__init__()
+        super(ReferParser, self).__init__()
         if mode not in ['train', 'valid']:
             raise ValueError(f'Invalid mode: {mode}')
         self.mode = mode
@@ -181,9 +181,23 @@ class ADAINParser(data.Dataset):
         self.pm25_label = self.local_features[:, :, :, 0]
         self.local_features = self.local_features[:, :, :, 1:]
 
-        station_dist, station_direction = self._cal_distance(self.local_nodes[:, :, 1], self.local_nodes[:, :, 0],
-                                                             self.station_nodes[:, :, 1], self.station_nodes[:, :, 0])
-        self.station_dist = np.concatenate((station_dist[:, :, np.newaxis], station_direction[:, :, np.newaxis]), axis=-1)
+        if config.model_name == 'ASTGC':
+            self.station_dist = []
+            for i in range(self.station_nodes.shape[1]):
+                station_dist, station_direction = self._cal_distance(self.station_nodes[:, [i], 1],
+                                                                     self.station_nodes[:, [i], 0],
+                                                                     self.station_nodes[:, :, 1],
+                                                                     self.station_nodes[:, :, 0])
+                self.station_dist.append(
+                    np.concatenate((station_dist[:, :, np.newaxis], station_direction[:, :, np.newaxis]),
+                                   axis=-1))
+            self.station_dist = np.stack(self.station_dist, axis=1)
+        else:
+            station_dist, station_direction = self._cal_distance(self.local_nodes[:, :, 1], self.local_nodes[:, :, 0],
+                                                                 self.station_nodes[:, :, 1],
+                                                                 self.station_nodes[:, :, 0])
+            self.station_dist = np.concatenate((station_dist[:, :, np.newaxis], station_direction[:, :, np.newaxis]),
+                                               axis=-1)
         self.local_nodes = self.local_nodes[:, :, 2:]
         self.station_nodes = self.station_nodes[:, :, 2:]
 
@@ -343,6 +357,8 @@ class ReferenceMLParser:
 
 
 if __name__ == '__main__':
-    parser = ADAINParser(ReferConfig(config_filename='refer_base_config.yaml'), [2, 5, 6, 8, 10, 11], mode='train')
+    config = ReferConfig(config_filename='refer_base_config.yaml')
+    config.model_name = 'ASTGC'
+    parser = ReferParser(config, [2, 5, 6, 8, 10, 11], mode='train')
     a = parser.__getitem__(1)
     print(a)

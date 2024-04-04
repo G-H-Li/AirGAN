@@ -186,7 +186,7 @@ class ReferConfig:
         if sys.platform == 'win32':
             node_name = 'Local'
         else:
-            node_name = os.uname().nodename
+            node_name = 'Linux'
         file_dir = self.base_config['filepath'][node_name]
         self.dataset_dir = file_dir['dataset_dir']
         self.records_dir = file_dir['records_dir']
