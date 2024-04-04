@@ -232,8 +232,8 @@ class AirFormer(nn.Module):
         supports: adjacency matrix (actually our method doesn't use it)
                 Including adj here is for consistency with GNN-based methods
         """
-        x_embed = self.embedding_air(time_feature[..., :2].int())
-        x_embed = x_embed.view(self.batch_size, 1, 1, -1).repeat(1, self.hist_len, self.city_num, 1)
+        x_embed = self.embedding_air(time_feature[..., :self.hist_len, :2].int())
+        x_embed = x_embed.view(self.batch_size, self.hist_len, 1, -1).repeat(1, 1, self.city_num, 1)
         x = torch.cat((pm25_hist, feature[:, :self.hist_len], x_embed), -1)
 
         x = x.permute(0, 3, 2, 1)  # [b, c, n, t]

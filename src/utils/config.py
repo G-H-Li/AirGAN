@@ -23,7 +23,7 @@ class Config(object):
     Configuration class
     Use to read the config
     """
-    def __init__(self, config_path: str = config_complete_path, config_filename: str = 'base_config.yaml'):
+    def __init__(self, config_path: str = config_complete_path, config_filename: str = 'for_base_config.yaml'):
         self.config_path = os.path.join(config_path, config_filename)
         # read general config
         with open(self.config_path) as f:
@@ -32,8 +32,8 @@ class Config(object):
             sys.exit("No config file found")
         self._read_experiment_config()
         # read model hyperparameters
-        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN', 'AirFormer', 'SimST', 'ADAIN']:
-            self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
+        if self.model_name in ['MLP', 'GRU', 'LSTM', 'GC_LSTM', 'GAGNN', 'PM25_GNN', 'AirFormer', 'SimST']:
+            self.model_config_path = os.path.join(config_path, f'for_{self.model_name}_config.yaml')
             with open(self.model_config_path) as f:
                 self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)
             if self.hyperparameters is None:
@@ -117,21 +117,6 @@ class Config(object):
             self.head_nums = config['head_nums']
             self.steps = config['steps']
             self.blocks = config['blocks']
-        elif self.model_name == 'CW_GAN':
-            config = model_params_config['CW_GAN']
-            self.critic_iters = config['critic_iters']
-            self.hidden_dim = config['hidden_dim']
-        elif self.model_name == 'DGCRN':
-            config = model_params_config['DGCRN']
-            self.rnn_size = config['rnn_size']
-            self.dropout = config['dropout']
-            self.gnn_dim = config['gnn_dim']
-            self.prop_alpha = config['prop_alpha']
-            self.gcn_depth = config['gcn_depth']
-            self.clip = config['clip']
-            self.tanh_alpha = config['tanh_alpha']
-            self.step_size = config['step_size']
-            self.node_dim = config['node_dim']
         elif self.model_name == 'SimST':
             config = model_params_config['SimST']
             self.hidden_dim = config['hidden_dim']
@@ -139,9 +124,6 @@ class Config(object):
             self.clip = config['clip']
             self.gru_layers = config['gru_layers']
             self.use_dynamic = config['use_dynamic']
-        elif self.model_name == 'ADAIN':
-            config = model_params_config['ADAIN']
-            self.dropout = config['dropout']
 
     def _read_data_info_config(self):
         """
@@ -183,8 +165,8 @@ class ReferConfig:
             sys.exit("No config file found")
         self._read_experiment_config()
         # read model hyperparameters
-        if self.model_name in ['ADAIN', 'NBST', 'KNN', 'RF', 'SVR', 'IDW', 'XGB']:
-            self.model_config_path = os.path.join(config_path, f'{self.model_name}_config.yaml')
+        if self.model_name in ['ADAIN', 'NBST', 'MCAM', 'ASTGC', 'KNN', 'RF', 'SVR', 'XGB']:
+            self.model_config_path = os.path.join(config_path, f'refer_{self.model_name}_config.yaml')
             with open(self.model_config_path) as f:
                 self.hyperparameters = yaml.load(f, Loader=yaml.FullLoader)
             if self.hyperparameters is None:
@@ -237,7 +219,7 @@ class ReferConfig:
         Read general hyperparameter config
         :return:
         """
-        if self.hyperparameters is not None and self.model_name in ['ADAIN', 'NBST']:
+        if self.hyperparameters is not None and self.model_name in ['ADAIN', 'NBST', 'MCAM', 'ASTGC']:
             hyper_params_config = self.hyperparameters['general_hyper_params']
             self.is_early_stop = hyper_params_config['is_early_stop']
             self.early_stop = hyper_params_config['early_stop']
@@ -247,7 +229,7 @@ class ReferConfig:
             self.exp_times = hyper_params_config['exp_times']
             self.weight_decay = hyper_params_config['weight_decay']
             self.lr = hyper_params_config['lr']
-        elif self.hyperparameters is not None and self.model_name in ['KNN', 'RF', 'SVR', 'IDW', 'XGB']:
+        elif self.hyperparameters is not None and self.model_name in ['KNN', 'RF', 'SVR', 'XGB']:
             hyper_params_config = self.hyperparameters['general_hyper_params']
             self.exp_times = hyper_params_config['exp_times']
 
@@ -276,6 +258,12 @@ class ReferConfig:
             self.alpha = config['alpha']
             self.head_num = config['head_num']
             self.attn_layer = config['attn_layer']
+        elif self.model_name == 'MCAM':
+            config = model_params_config['MCAM']
+            self.hidden_dim = config['hidden_dim']
+        elif self.model_name == "ASTGC":
+            config = model_params_config['ASTGC']
+            self.hidden_dim = config['hidden_dim']
 
     def _read_data_info_config(self):
         """

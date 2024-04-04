@@ -71,6 +71,7 @@ class GAGNN(nn.Module):
 
     def forward(self, pm25_hist, feature, time_feature):
         hist_feature = feature[:, :self.hist_len].transpose(1, 2)
+        time_feature = time_feature[:, self.hist_len-1]
         x = hist_feature.reshape(-1, feature.shape[2], feature.shape[3])
         x = x.transpose(0, 1)
         x = self.encoder(x)

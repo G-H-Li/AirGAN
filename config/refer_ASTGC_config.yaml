@@ -1,0 +1,16 @@
+# general hyperparameters setting
+general_hyper_params:
+  seq_len: 24
+  batch_size: 128
+  epochs: 50
+  exp_times: 3
+  weight_decay: 0.0001
+  lr: 0.001
+  is_early_stop: True
+  early_stop: 5
+# model hyperparameters setting
+model_hyper_params:
+  # 1: normalize, 2: embedding
+  feature_process: [ 1, 1, 1, 1, 1, 1, 1, 1, 1 ]
+  ASTGC:
+    hidden_dim: 32

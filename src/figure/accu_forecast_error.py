@@ -103,5 +103,5 @@ if __name__ == "__main__":
     config = Config()
     # read_predict_res(config, "SimST", 8, 24, "city")
     # read_predict_res(config, "PM25_GNN", 8, 24, "group")
-    plt_multi_method_results(config, ["MLP", "LSTM", "PM25_GNN"], 8, 24)
+    plt_multi_method_results(config, ["MLP", "LSTM", "PM25_GNN", "AirFormer", "SimST"], 8, 24)
     # plt_trend_and_pm25(config)

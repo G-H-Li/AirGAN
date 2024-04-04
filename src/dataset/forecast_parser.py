@@ -83,6 +83,7 @@ class KnowAirDataset(data.Dataset):
 
         self.pm25 = _add_t(self.pm25, seq_len)
         self.feature = _add_t(self.feature, seq_len)
+        self.embedding_feature = _add_t(self.embedding_feature, seq_len)
 
     def _calc_mean_std(self):
         self.feature_mean = self.feature.mean(axis=(0, 1))

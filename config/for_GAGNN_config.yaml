@@ -2,8 +2,8 @@
 general_hyper_params:
   hist_len: 8
   pred_len: 8
-  batch_size: 64
-  epochs: 300
+  batch_size: 32
+  epochs: 50
   exp_times: 1
   weight_decay: 0.001
   lr: 0.001
@@ -12,7 +12,7 @@ general_hyper_params:
 # model hyperparameters setting
 model_hyper_params:
   # 1: normalize, 2: embedding
-  feature_process: [ 1, 1, 1, 1, 2, 2, 2, 1, 1 ]
+  feature_process: [ 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1 ]
   GAGNN:
     group_num: 15
     weight_rate: 50

@@ -16,7 +16,7 @@ experiment:
   feature_process: [ 1, 2, 1, 1, 1, 2, 2, 2, 2 ]
   # progress setting
   save_npy: True
-  # model setting, optional: NBST, ADAIN, KNN, XGB, SVR, RF
+  # model setting, optional: NBST, ADAIN, KNN, XGB, SVR, RF, ASTGC, MCAM
   model_name: NBST
   # train seed, 0 means random
   seed: 1234

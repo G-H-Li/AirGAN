@@ -25,7 +25,7 @@ experiment:
   # progress setting
   save_npy: True
   # model setting, optional: MLP, GRU, GC_LSTM, PM25_GNN, GAGNN, AirFormer, SimST
-  model_name: AirFormer
+  model_name: GAGNN
   # train seed, 0 means random
   seed: 1
   # dataloader num worker
