@@ -11,11 +11,11 @@ general_hyper_params:
 # model hyperparameters setting
 model_hyper_params:
   # 1: normalize, 2: embedding
-  feature_process: [ 2, 2, 1, 1, 1, 2, 2, 2, 2 ]
+  feature_process: [ 1, 2, 1, 1, 1, 2, 2, 2, 2 ]
   NBST:
     hidden_dim: 128
-    dropout: 0.4
-    head_num: 3
-    attn_layer: 4
+    dropout: 0.3
+    head_num: 4
+    attn_layer: 3
     clip: 10
-    alpha: 0
+    alpha: 0.7

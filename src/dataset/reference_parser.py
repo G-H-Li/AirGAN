@@ -21,10 +21,11 @@ class NBSTParser(data.Dataset):
         self.get_stations(node_ids)
         self.local_features, self.local_nodes, self.station_features, self.station_nodes = self.split_station_and_local(
             node_ids)
-        process_pm25 = np.vectorize(self._process_pm25)
+        # process_pm25 = np.vectorize(self._process_pm25)
         self.pm25_label = self.local_features[:, :, :, 0]
-        pm25_features = process_pm25(self.station_features[:, :, :, [0]])
-        self.station_features = np.concatenate((pm25_features, self.station_features[:, :, :, 1:]), axis=-1)
+        self.pm25_hist = self.station_features[:, :, :, [0]]
+        # pm25_features = process_pm25(self.station_features[:, :, :, [0]])
+        # self.station_features = np.concatenate((pm25_features, self.station_features[:, :, :, 1:]), axis=-1)
         # self.pm25_label = process_pm25(self.local_features[:, :, :, 0])
         # 使用 one-hot 编码将原始张量转换为形状为（128，24，1，6）的张量
         # self.pm25_label = np.eye(6)[self.pm25_label.squeeze()]
@@ -38,7 +39,9 @@ class NBSTParser(data.Dataset):
 
         self._process_feature(config)
         # 去除local的pm25数据
-        self.local_emb_features = self.local_emb_features[:, :, :, 1:]
+        self.local_features = self.local_features[:, :, :, 1:]
+        self.station_features = self.station_features[:, :, :, 1:]
+
         self.features_mean = self.station_features.mean(axis=(2, 1, 0))
         self.features_std = self.station_features.std(axis=(2, 1, 0))
         self.station_nodes_mean = self.station_nodes.mean(axis=(1, 0))
@@ -52,6 +55,7 @@ class NBSTParser(data.Dataset):
         self.station_dist_scaler = StandardScaler(mean=self.station_dist_mean, std=self.station_dist_std)
 
         self.pm25_label = self.pm25_scaler.normalize(self.pm25_label)
+        self.pm25_hist = self.pm25_scaler.normalize(self.pm25_hist)
         self.station_features = self.feature_scaler.normalize(self.station_features)
         self.local_features = self.feature_scaler.normalize(self.local_features)
         self.station_nodes = self.station_nodes_scaler.normalize(self.station_nodes)
@@ -158,7 +162,7 @@ class NBSTParser(data.Dataset):
         return len(self.pm25_label)
 
     def __getitem__(self, index):
-        return (self.pm25_label[index], self.station_dist[index],
+        return (self.pm25_label[index], self.pm25_hist[index], self.station_dist[index],
                 self.local_nodes[index], self.local_features[index], self.local_emb_features[index],
                 self.station_nodes[index], self.station_features[index], self.station_emb_features[index])
 

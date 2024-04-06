@@ -37,6 +37,8 @@ class ReferTrainer(ReferenceBaseTrainer):
                          node_in_dim,
                          self.config.hidden_dim,
                          self.device)
+        else:
+            raise ValueError('Invalid model name')
 
     def _get_optimizer(self):
         return Adam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)

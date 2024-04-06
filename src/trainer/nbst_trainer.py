@@ -38,9 +38,8 @@ class NBSTTrainer(ReferenceBaseTrainer):
         return NBSTLoss(self.pm25_std, self.pm25_mean, self.config.alpha, self.device)
 
     def _get_optimizer(self):
-        # return torch.optim.Adam(self.model.parameters(),
-        #                         lr=self.config.lr, weight_decay=self.config.weight_decay)
-        return torch.optim.NAdam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
+        return torch.optim.Adam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
+        # return torch.optim.NAdam(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
         # return torch.optim.SGD(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
 
     def _train(self, train_loader):
@@ -52,7 +51,7 @@ class NBSTTrainer(ReferenceBaseTrainer):
         train_loss = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            local_pm25, station_dist, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
+            local_pm25, station_pm25, station_dist, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
             local_node = local_node.float().to(self.device)
             local_features = local_features.float().to(self.device)
             local_emb = local_emb.to(self.device)
@@ -60,9 +59,10 @@ class NBSTTrainer(ReferenceBaseTrainer):
             station_emb = station_emb.to(self.device)
             station_features = station_features.float().to(self.device)
             pm25_label = local_pm25.float().to(self.device)
+            pm25_hist = station_pm25.float().to(self.device)
             station_dist = station_dist.float().to(self.device)
 
-            pm25_pred = self.model(station_dist, local_node, local_features,
+            pm25_pred = self.model(station_dist, pm25_hist, local_node, local_features,
                                    local_emb, station_nodes, station_features, station_emb)
 
             loss = self.criterion(pm25_pred, pm25_label)
@@ -84,7 +84,7 @@ class NBSTTrainer(ReferenceBaseTrainer):
         label_list = []
         test_loss = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
-            local_pm25, station_dist, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
+            local_pm25, station_pm25, station_dist, local_node, local_features, local_emb, station_nodes, station_features, station_emb = data
             local_node = local_node.float().to(self.device)
             local_features = local_features.float().to(self.device)
             local_emb = local_emb.to(self.device)
@@ -92,9 +92,10 @@ class NBSTTrainer(ReferenceBaseTrainer):
             station_emb = station_emb.to(self.device)
             station_features = station_features.float().to(self.device)
             pm25_label = local_pm25.float().to(self.device)
+            pm25_hist = station_pm25.float().to(self.device)
             station_dist = station_dist.float().to(self.device)
 
-            pm25_pred = self.model(station_dist, local_node, local_features,
+            pm25_pred = self.model(station_dist, pm25_hist, local_node, local_features,
                                    local_emb, station_nodes, station_features, station_emb)
 
             loss = self.criterion(pm25_pred, pm25_label)

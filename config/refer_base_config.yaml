@@ -17,11 +17,11 @@ experiment:
   # progress setting
   save_npy: True
   # model setting, optional: NBST, ADAIN, KNN, XGB, SVR, RF, ASTGC, MCAM
-  model_name: ASTGC
+  model_name: NBST
   # train seed, 0 means random
   seed: 1234
   # dataloader num worker
-  num_workers: 1
+  num_workers: 2
 
 # general filepath
 filepath:
