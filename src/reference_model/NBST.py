@@ -1,23 +1,7 @@
-import numpy as np
 import torch
 from torch import nn
-from torch.nn import GRU, Sequential, Linear, Dropout, Tanh, SiLU, ReLU, Sigmoid
-from torch.nn.functional import l1_loss, binary_cross_entropy_with_logits, cross_entropy
-
-
-class NBSTLoss(nn.Module):
-    def __init__(self, pm25_std, pm25_mean, alpha, device):
-        super(NBSTLoss, self).__init__()
-        self.pm25_std = pm25_std
-        self.pm25_mean = pm25_mean
-        self.alpha = alpha
-        self.device = device
-
-    def forward(self, output, target):
-        loss1 = l1_loss(output, target)
-        loss2 = cross_entropy(torch.cosine_similarity(output, target, dim=1),
-                              torch.cosine_similarity(target, target, dim=1))
-        return loss1 + self.alpha * loss2
+from torch.nn import Sequential, Linear, Dropout, Tanh, SiLU, ReLU
+from torch.nn.functional import softmax
 
 
 class PreNorm(nn.Module):
@@ -38,8 +22,6 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(dim, hidden_dim),
             nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(hidden_dim, dim),
             nn.Dropout(dropout)
         )
 
@@ -55,8 +37,7 @@ class StaticAttention(nn.Module):
         self.input_size = input_size
         self.head_num = head_num
         self.dropout = dropout
-        head_dim = input_size // head_num
-        self.scale = head_dim ** -0.5
+        self.scale = input_size ** -0.5
 
         self.multi_head_q = Linear(input_size, input_size)  #
         self.multi_head_k = Linear(input_size, input_size)
@@ -66,9 +47,11 @@ class StaticAttention(nn.Module):
 
         self.multi_head_out = nn.Sequential(nn.Linear(input_size, input_size),
                                             nn.Dropout(dropout),
-                                            PreNorm(input_size, FeedForward(input_size, 2 * input_size, dropout)))
+                                            PreNorm(input_size, FeedForward(input_size, input_size, dropout)))
+        self.attn_out = nn.Sequential(nn.Linear(head_num, 1),
+                                      ReLU())
 
-    def forward(self, q, k, v, mask=None):
+    def forward(self, q, k, v, attn, mask=None):
         # q: batch_size, q_dim, input_size
         # kv: batch_size, site_num, input_size
         # mask: batch_size, q_dim, site_num
@@ -89,8 +72,8 @@ class StaticAttention(nn.Module):
         output = output + q * self.relative_alpha  # batch_size, head_num, q_dim, input_size//head_num
 
         output = output.transpose(1, 2).reshape(B, -1, C)
-
         output = self.multi_head_out(output)
+        # attn = self.attn_out(attn.permute(0, 2, 3, 1)).reshape(B, -1, S)
         return output
 
 
@@ -114,7 +97,7 @@ class DynamicSelfAttention(nn.Module):
 
         self.multi_head_out = nn.Sequential(nn.Linear(hidden_dim, hidden_dim),
                                             nn.Dropout(dropout),
-                                            PreNorm(hidden_dim, FeedForward(hidden_dim, 2 * hidden_dim, dropout)))
+                                            PreNorm(hidden_dim, FeedForward(hidden_dim, hidden_dim, dropout)))
 
         self.seq_out = nn.Sequential(nn.Linear(seq_len * hidden_dim, hidden_dim),
                                      SiLU(),
@@ -137,6 +120,23 @@ class DynamicSelfAttention(nn.Module):
         return out
 
 
+class ConvLSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, kernel_size, lstm_layers, dropout):
+        super(ConvLSTM, self).__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.kernel_size = kernel_size
+        self.dropout = dropout
+
+        self.conv = nn.Conv1d(input_size, hidden_size, kernel_size, padding=kernel_size // 2)
+        self.lstm = nn.LSTM(hidden_size, hidden_size, batch_first=True, dropout=dropout, num_layers=lstm_layers)
+
+    def forward(self, x):
+        x = self.conv(x.permute(0, 2, 1)).permute(0, 2, 1)
+        x, (h, _) = self.lstm(x)
+        return x, h[-1]
+
+
 class NBST(nn.Module):
     def __init__(self, seq_len, device, batch_size, in_dim, node_in_dim, hidden_dim, dropout, head_num, attn_layer):
         super(NBST, self).__init__()
@@ -154,52 +154,79 @@ class NBST(nn.Module):
 
         self.sigma_d = nn.Parameter(2 * torch.rand(1, device=self.device, requires_grad=True) - 1)
         self.sigma_r = nn.Parameter(2 * torch.rand(1, device=self.device, requires_grad=True) - 1)
+        self.sigma_w = nn.Parameter(2 * torch.rand(1, device=self.device, requires_grad=True) - 1)
 
         # self.pm25_emb = nn.Embedding(6, self.emb_dim)
         self.weather_emb = nn.Embedding(17, self.emb_dim)
-        self.wind_direc_emb = nn.Embedding(25, self.emb_dim)
+        self.wind_direc_emb = nn.Embedding(9, self.emb_dim)
         self.month_emb = nn.Embedding(12, self.emb_dim)
         self.day_emb = nn.Embedding(7, self.emb_dim)
         self.hour_emb = nn.Embedding(24, self.emb_dim)
 
-        self.static_emb = nn.Sequential(Linear(self.node_in_dim, self.hidden_dim),
+        self.static_mlp = nn.Sequential(Linear(self.node_in_dim, self.hidden_dim * 2),
                                         SiLU(),
-                                        Linear(self.hidden_dim, self.hidden_dim))
-        self.static_attn_layers = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)])
-        for _ in range(self.attn_layer - 1):
-            self.static_attn_layers.append(StaticAttention(self.head_num, self.hidden_dim, self.dropout))
+                                        Dropout(self.dropout),
+                                        Linear(self.hidden_dim * 2, self.hidden_dim),
+                                        SiLU())  #
+        self.static_query_fc = nn.Sequential(nn.Linear(2 * self.hidden_dim, self.hidden_dim),
+                                             ReLU())
+        self.static_attention = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim),
+                                              nn.ReLU(),
+                                              nn.Linear(self.hidden_dim, self.hidden_dim),
+                                              nn.Softmax(dim=-1))
+        self.static_attn_layer = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
+                                                for _ in range(self.attn_layer)])
+        self.static_attn_fusion = nn.Sequential(Linear(self.hidden_dim * self.attn_layer, 2 * self.hidden_dim),
+                                                ReLU(),
+                                                Dropout(self.dropout),
+                                                Linear(2 * self.hidden_dim, self.hidden_dim),
+                                                ReLU())
 
-        # 时序时间尺度特征编码
-        self.dynamic_emb = nn.GRU(self.in_dim + self.emb_dim * 5, self.hidden_dim,
-                                  dropout=self.dropout, batch_first=True, num_layers=self.gru_layer)
+        self.dynamic_station_lstm = ConvLSTM(self.in_dim + 5 * self.emb_dim, self.hidden_dim,
+                                             3, self.gru_layer, self.dropout)
+        self.dynamic_local_lstm = ConvLSTM(self.in_dim - 1 + 5 * self.emb_dim, self.hidden_dim,
+                                           3, self.gru_layer, self.dropout)
 
-        # 提取目标点位与监测点位之间的注意力关系
-        self.dynamic_attn_layers = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)])
-        for _ in range(self.attn_layer - 1):
-            self.dynamic_attn_layers.append(StaticAttention(self.head_num, self.hidden_dim, self.dropout))
+        self.dynamic_attention = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim),
+                                               nn.ReLU(),
+                                               nn.Linear(self.hidden_dim, self.hidden_dim),
+                                               nn.Softmax(dim=-1))
+        self.dynamic_attn_layer = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
+                                                 for _ in range(self.attn_layer)])
+        self.dynamic_attn_fusion = nn.Sequential(Linear(self.hidden_dim * self.attn_layer, 2 * self.hidden_dim),
+                                                 ReLU(),
+                                                 Dropout(self.dropout),
+                                                 Linear(2 * self.hidden_dim, self.hidden_dim),
+                                                 ReLU())
 
-        # pm25相关关系提取
-        self.aqi_dynamic_layers = DynamicSelfAttention(self.seq_len, 1, self.hidden_dim,
-                                                       self.hidden_dim, self.hidden_dim, self.dropout)
-        self.aqi_static_layers = DynamicSelfAttention(self.seq_len, 1, self.hidden_dim,
-                                                      self.hidden_dim, self.hidden_dim, self.dropout)
-
-        self.pred_mlp = Sequential(Linear(2 * self.hidden_dim, self.hidden_dim),
-                                   SiLU(),
-                                   Dropout(self.dropout),
-                                   Linear(self.hidden_dim, self.seq_len))
+        self.pred_infer_mlp = Sequential(Linear(2 * self.hidden_dim, self.hidden_dim),
+                                         ReLU(),
+                                         Linear(self.hidden_dim, 1),
+                                         Tanh())
 
     def cal_pearson_corr(self, x, y):
-        mean_x = torch.mean(x, dim=-1, keepdim=True)
-        mean_y = torch.mean(y, dim=-1, keepdim=True)
-        xm = x - mean_x
-        ym = y - mean_y
-        r_num = torch.sum(xm * ym, dim=1)
-        r_den = torch.sqrt(torch.sum(xm ** 2, dim=1) * torch.sum(ym ** 2, dim=1))
-        r = r_num / r_den
-        return r
+        vx = x - torch.mean(x, dim=-1, keepdim=True)
+        vy = y - torch.mean(y, dim=-1, keepdim=True)
+        corr = torch.sum(vx * vy, dim=-1) / (
+                torch.sqrt(torch.sum(vx ** 2, dim=-1)) * torch.sqrt(torch.sum(vy ** 2, dim=-1)))
+        return corr
 
-    def forward(self, station_dist, pm25_hist,
+    def cal_static_corr(self, dist, local_node, station_nodes):
+        dist_cor = torch.exp(-torch.square(dist / self.sigma_d) / 2)
+        pearson_cor = self.cal_pearson_corr(local_node, station_nodes)
+        pearson_cor = torch.exp(-torch.square(pearson_cor / self.sigma_r) / 2)
+        static_cor = dist_cor * pearson_cor
+        static_cor = static_cor / torch.sum(static_cor, dim=1, keepdim=True)
+        return static_cor.unsqueeze(1)
+
+    def cal_dynamic_corr(self, wind_direc, sta_direc):
+        direc = torch.abs((wind_direc - 1) * 45 - sta_direc - 180)
+        direc = (direc - direc.mean(dim=1, keepdim=True)) / direc.std(dim=1, keepdim=True)
+        direc_cor = -torch.square(direc)
+        dynamic_cor = softmax(direc_cor, dim=1)
+        return dynamic_cor
+
+    def forward(self, station_dist,
                 local_node, local_features, local_emb,
                 station_nodes, station_features, station_emb):
         # local_node: batch_size, 1(node_num), 16(node_features_num)
@@ -212,7 +239,6 @@ class NBST(nn.Module):
         month_emb = self.month_emb(station_emb[:, :, :, -3] - 1)
         day_emb = self.day_emb(station_emb[:, :, :, -2])
         hour_emb = self.hour_emb(station_emb[:, :, :, -1])
-        # station_pm25_emb = self.pm25_emb(station_emb[:, :, :, 0])
         station_weather_emb = self.weather_emb(station_emb[:, :, :, -5])
         station_wind_direc_emb = self.wind_direc_emb(station_emb[:, :, :, -4])
         local_weather_emb = self.weather_emb(local_emb[:, :, :, 0])
@@ -223,53 +249,41 @@ class NBST(nn.Module):
         local_features = torch.cat((local_features, local_weather_emb, local_wind_direc_emb,
                                     hour_emb[:, :, [0]], day_emb[:, :, [0]], month_emb[:, :, [0]]), dim=-1)
 
-        # 静态站点mask提取
-        station_dist = station_dist[:, :, 0]
-        static_mask = []
+        # static_query = self.cal_static_corr(station_dist[:, :, 0], local_node.repeat(1, station_num, 1), station_nodes)
+        # # 站点静态信息提取
+        station_nodes_emb = self.static_mlp(station_nodes)
+        local_node_emb = self.static_mlp(local_node)
+        # static_query = self.static_query_fc(torch.cat((local_node_emb, static_query @ station_nodes_emb), dim=-1))
+        static_fusion = self.static_attention(torch.cat((local_node_emb, station_nodes_emb), dim=1))
+        static_output = []
+        for layer in self.static_attn_layer:
+            static_out = layer(local_node_emb, static_fusion, static_fusion)
+            static_output.append(static_out.squeeze(1))
+        static_output = torch.cat(static_output, dim=-1)
+        static_output = self.static_attn_fusion(static_output)
+
+        _, local_dynamic_h = self.dynamic_local_lstm(local_features.squeeze(2))
+        station_dynamic_emb = []
         for i in range(station_num):
-            dist = station_dist[:, i]
-            dist = torch.square(dist / self.sigma_d)
-            pearson = self.cal_pearson_corr(local_node.squeeze(1), station_nodes[:, i])
-            pearson = torch.square(pearson / self.sigma_r)
-            static_mask.append(torch.log(dist + pearson))
+            station_dynamic_out, station_dynamic_h = self.dynamic_station_lstm(station_features[:, :, i])
+            station_dynamic_emb.append(station_dynamic_h)
+        station_dynamic_emb = torch.stack(station_dynamic_emb, dim=1)
+        nodes = torch.cat((local_dynamic_h.unsqueeze(1), station_dynamic_emb), dim=1)
+        dynamic_weight = self.dynamic_attention(nodes).squeeze(-1)
+        # dynamic_gcn_out = self.dynamic_gcn(nodes, edge_index, dynamic_weight)
+        dynamic_output = []
+        for layer in self.dynamic_attn_layer:
+            dynamic_out = layer(local_dynamic_h.unsqueeze(1), dynamic_weight, dynamic_weight)
+            dynamic_output.append(dynamic_out.squeeze(1))
+        dynamic_out = torch.cat(dynamic_output, dim=-1)
+        dynamic_out = self.dynamic_attn_fusion(dynamic_out)
 
-        static_mask = torch.stack(static_mask, dim=1)
-        static_mask = (static_mask <= 0).view(batch_size, station_num, 1).transpose(1, 2)
-
-        # 站点与预测点静态注意力提取
-        # 站点静态信息提取
-        station_nodes_emb = self.static_emb(station_nodes)
-        local_node_emb = self.static_emb(local_node)
-
-        # 站点与预测点动态注意力提取
-        _, local_features_hn = self.dynamic_emb(local_features.squeeze(2))
-        local_features_emb = local_features_hn[-1].unsqueeze(1)  # batch_size, 1, hidden_dim
-        station_features_out = []
-        station_features_emb = []
-        for i in range(station_num):
-            station_features_output, station_hn = self.dynamic_emb(station_features[:, :, i])
-            station_features_emb.append(station_hn[-1])
-            station_features_out.append(station_features_output)
-        station_features_emb = torch.stack(station_features_emb, dim=1)  # batch_size, station_num, hidden_dim
-        station_features_out = torch.stack(station_features_out, dim=2)  # batch_size, seq_len, station_num, hidden_dim
-
-        # AQI相关关系提取
-        aqi_dynamic_cors = self.aqi_dynamic_layers(pm25_hist, station_features_out, station_features_out)
-        aqi_static_cors = self.aqi_static_layers(pm25_hist,
-                                                 station_nodes_emb.unsqueeze(1).repeat(1, seq_len, 1, 1),
-                                                 station_nodes_emb.unsqueeze(1).repeat(1, seq_len, 1, 1))
-
-        static_out = local_node_emb
-        dynamic_out = local_features_emb
-        for d_layer, s_layer in zip(self.dynamic_attn_layers, self.static_attn_layers):
-            dynamic_out = d_layer(dynamic_out, aqi_dynamic_cors, station_features_emb)
-            static_out = s_layer(static_out, aqi_static_cors, station_nodes_emb, static_mask)
-        dynamic_output = static_out.squeeze(1)
-        static_output = static_out.squeeze(1)
-
-        # 预测
-        pred_in = torch.cat((static_output, dynamic_output), dim=-1)
-        pred_out = self.pred_mlp(pred_in)
+        preds = []
+        for i in range(seq_len):
+            pred_in = torch.cat((static_output, dynamic_out), dim=-1)
+            pred_out = self.pred_infer_mlp(pred_in)
+            preds.append(pred_out)
+        pred_out = torch.stack(preds, dim=1)
         pred = pred_out.view(batch_size, seq_len, -1)
 
         return pred

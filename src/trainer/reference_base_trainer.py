@@ -67,6 +67,7 @@ class ReferenceBaseTrainer:
     def _set_seed(self):
         if self.config.seed != 0:
             torch.manual_seed(self.config.seed)
+        self.logger.debug(f'Set seed: {torch.seed()}')
 
     def _choose_device(self):
         """

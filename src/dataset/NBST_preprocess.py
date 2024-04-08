@@ -14,7 +14,7 @@ from src.utils.config import Config
 
 class NBST_preprocess:
     def __init__(self, config):
-        self.urban_air = pd.read_csv(os.path.join(config.dataset_dir, 'UrbanAir_processed.csv.gz'))
+        self.urban_air = pd.read_csv(os.path.join(config.dataset_dir, 'UrbanAir_processed.csv'))
         self.link_path = os.path.join(config.dataset_dir, 'UrbanAir_link_processed.csv')
         self.poi_path = os.path.join(config.dataset_dir, 'UrbanAir_poi_processed.csv')
         self.link = pd.read_csv(self.link_path)

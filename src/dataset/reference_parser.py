@@ -23,7 +23,6 @@ class NBSTParser(data.Dataset):
             node_ids)
         # process_pm25 = np.vectorize(self._process_pm25)
         self.pm25_label = self.local_features[:, :, :, 0]
-        self.pm25_hist = self.station_features[:, :, :, [0]]
         # pm25_features = process_pm25(self.station_features[:, :, :, [0]])
         # self.station_features = np.concatenate((pm25_features, self.station_features[:, :, :, 1:]), axis=-1)
         # self.pm25_label = process_pm25(self.local_features[:, :, :, 0])
@@ -31,8 +30,7 @@ class NBSTParser(data.Dataset):
         # self.pm25_label = np.eye(6)[self.pm25_label.squeeze()]
         station_dist, station_direction = self._cal_distance(self.local_nodes[:, :, 1], self.local_nodes[:, :, 0],
                                                              self.station_nodes[:, :, 1], self.station_nodes[:, :, 0])
-        self.station_dist = np.concatenate((station_dist[:, :, np.newaxis], station_direction[:, :, np.newaxis]),
-                                           axis=-1)
+        self.station_dist = station_dist[:, :, np.newaxis]
         # 去除节点数据中的经纬度信息
         self.local_nodes = self.local_nodes[:, :, 2:]
         self.station_nodes = self.station_nodes[:, :, 2:]
@@ -40,27 +38,29 @@ class NBSTParser(data.Dataset):
         self._process_feature(config)
         # 去除local的pm25数据
         self.local_features = self.local_features[:, :, :, 1:]
-        self.station_features = self.station_features[:, :, :, 1:]
 
-        self.features_mean = self.station_features.mean(axis=(2, 1, 0))
-        self.features_std = self.station_features.std(axis=(2, 1, 0))
+        self.station_features_mean = self.station_features.mean(axis=(2, 1, 0))
+        self.station_features_std = self.station_features.std(axis=(2, 1, 0))
+        self.local_features_mean = self.local_features.mean(axis=(2, 1, 0))
+        self.local_features_std = self.local_features.std(axis=(2, 1, 0))
         self.station_nodes_mean = self.station_nodes.mean(axis=(1, 0))
         self.station_nodes_std = self.station_nodes.std(axis=(1, 0))
         self.station_dist_mean = self.station_dist.mean(axis=(1, 0))
         self.station_dist_std = self.station_dist.std(axis=(1, 0))
 
         self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
-        self.feature_scaler = StandardScaler(mean=self.features_mean, std=self.features_std)
+        self.station_feature_scaler = StandardScaler(mean=self.station_features_mean, std=self.station_features_std)
+        self.local_feature_scaler = StandardScaler(mean=self.local_features_mean, std=self.local_features_std)
         self.station_nodes_scaler = StandardScaler(mean=self.station_nodes_mean, std=self.station_nodes_std)
         self.station_dist_scaler = StandardScaler(mean=self.station_dist_mean, std=self.station_dist_std)
 
         self.pm25_label = self.pm25_scaler.normalize(self.pm25_label)
-        self.pm25_hist = self.pm25_scaler.normalize(self.pm25_hist)
-        self.station_features = self.feature_scaler.normalize(self.station_features)
-        self.local_features = self.feature_scaler.normalize(self.local_features)
+        self.station_features = self.station_feature_scaler.normalize(self.station_features)
+        self.local_features = self.local_feature_scaler.normalize(self.local_features)
         self.station_nodes = self.station_nodes_scaler.normalize(self.station_nodes)
         self.local_nodes = self.station_nodes_scaler.normalize(self.local_nodes)
         self.station_dist = self.station_dist_scaler.normalize(self.station_dist)
+        self.station_dist = np.concatenate((self.station_dist, station_direction[:, :, np.newaxis]), axis=-1)
 
     def _calc_mean_std(self):
         self.pm25_mean = self.pm25.mean()
@@ -162,7 +162,7 @@ class NBSTParser(data.Dataset):
         return len(self.pm25_label)
 
     def __getitem__(self, index):
-        return (self.pm25_label[index], self.pm25_hist[index], self.station_dist[index],
+        return (self.pm25_label[index], self.station_dist[index],
                 self.local_nodes[index], self.local_features[index], self.local_emb_features[index],
                 self.station_nodes[index], self.station_features[index], self.station_emb_features[index])
 
