@@ -51,7 +51,7 @@ class StaticAttention(nn.Module):
         self.attn_out = nn.Sequential(nn.Linear(head_num, 1),
                                       ReLU())
 
-    def forward(self, q, k, v, attn, mask=None):
+    def forward(self, q, k, v, mask=None):
         # q: batch_size, q_dim, input_size
         # kv: batch_size, site_num, input_size
         # mask: batch_size, q_dim, site_num
@@ -77,47 +77,47 @@ class StaticAttention(nn.Module):
         return output
 
 
-class DynamicSelfAttention(nn.Module):
-    def __init__(self, seq_len, q_dim, k_dim, v_dim, hidden_dim, dropout):
-        super(DynamicSelfAttention, self).__init__()
-        self.seq_len = seq_len
-        self.q_dim = q_dim
-        self.k_dim = k_dim
-        self.v_dim = v_dim
-        self.hidden_dim = hidden_dim
-        self.dropout = dropout
-        head_dim = hidden_dim // seq_len
-        self.scale = head_dim ** -0.5
-
-        self.q_linear = Linear(self.q_dim, self.hidden_dim)
-        self.k_linear = Linear(self.k_dim, self.hidden_dim)
-        self.v_linear = Linear(self.v_dim, self.hidden_dim)
-
-        self.relative_alpha = nn.Parameter(torch.randn(seq_len, 1, 1))
-
-        self.multi_head_out = nn.Sequential(nn.Linear(hidden_dim, hidden_dim),
-                                            nn.Dropout(dropout),
-                                            PreNorm(hidden_dim, FeedForward(hidden_dim, hidden_dim, dropout)))
-
-        self.seq_out = nn.Sequential(nn.Linear(seq_len * hidden_dim, hidden_dim),
-                                     SiLU(),
-                                     nn.Dropout(dropout),
-                                     nn.Linear(hidden_dim, hidden_dim))
-
-    def forward(self, q, k, v):
-        q = self.q_linear(q)
-        k = self.k_linear(k)
-        v = self.v_linear(v)
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-
-        attn = attn.softmax(dim=-1)
-        out = attn @ v
-        out = out + q * self.relative_alpha
-
-        out = self.multi_head_out(out)
-        out = self.seq_out(out.permute(0, 2, 1, 3).reshape(out.size(0), out.size(2), -1))
-        return out
+# class DynamicSelfAttention(nn.Module):
+#     def __init__(self, seq_len, q_dim, k_dim, v_dim, hidden_dim, dropout):
+#         super(DynamicSelfAttention, self).__init__()
+#         self.seq_len = seq_len
+#         self.q_dim = q_dim
+#         self.k_dim = k_dim
+#         self.v_dim = v_dim
+#         self.hidden_dim = hidden_dim
+#         self.dropout = dropout
+#         head_dim = hidden_dim // seq_len
+#         self.scale = head_dim ** -0.5
+#
+#         self.q_linear = Linear(self.q_dim, self.hidden_dim)
+#         self.k_linear = Linear(self.k_dim, self.hidden_dim)
+#         self.v_linear = Linear(self.v_dim, self.hidden_dim)
+#
+#         self.relative_alpha = nn.Parameter(torch.randn(seq_len, 1, 1))
+#
+#         self.multi_head_out = nn.Sequential(nn.Linear(hidden_dim, hidden_dim),
+#                                             nn.Dropout(dropout),
+#                                             PreNorm(hidden_dim, FeedForward(hidden_dim, hidden_dim, dropout)))
+#
+#         self.seq_out = nn.Sequential(nn.Linear(seq_len * hidden_dim, hidden_dim),
+#                                      SiLU(),
+#                                      nn.Dropout(dropout),
+#                                      nn.Linear(hidden_dim, hidden_dim))
+#
+#     def forward(self, q, k, v):
+#         q = self.q_linear(q)
+#         k = self.k_linear(k)
+#         v = self.v_linear(v)
+#
+#         attn = (q @ k.transpose(-2, -1)) * self.scale
+#
+#         attn = attn.softmax(dim=-1)
+#         out = attn @ v
+#         out = out + q * self.relative_alpha
+#
+#         out = self.multi_head_out(out)
+#         out = self.seq_out(out.permute(0, 2, 1, 3).reshape(out.size(0), out.size(2), -1))
+#         return out
 
 
 class ConvLSTM(nn.Module):
@@ -176,7 +176,7 @@ class NBST(nn.Module):
                                               nn.Softmax(dim=-1))
         self.static_attn_layer = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
                                                 for _ in range(self.attn_layer)])
-        self.static_attn_fusion = nn.Sequential(Linear(self.hidden_dim * self.attn_layer, 2 * self.hidden_dim),
+        self.static_attn_fusion = nn.Sequential(Linear(self.hidden_dim * (1 + self.attn_layer), 2 * self.hidden_dim),
                                                 ReLU(),
                                                 Dropout(self.dropout),
                                                 Linear(2 * self.hidden_dim, self.hidden_dim),
@@ -193,7 +193,7 @@ class NBST(nn.Module):
                                                nn.Softmax(dim=-1))
         self.dynamic_attn_layer = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
                                                  for _ in range(self.attn_layer)])
-        self.dynamic_attn_fusion = nn.Sequential(Linear(self.hidden_dim * self.attn_layer, 2 * self.hidden_dim),
+        self.dynamic_attn_fusion = nn.Sequential(Linear(self.hidden_dim * (1 + self.attn_layer), 2 * self.hidden_dim),
                                                  ReLU(),
                                                  Dropout(self.dropout),
                                                  Linear(2 * self.hidden_dim, self.hidden_dim),
@@ -255,12 +255,13 @@ class NBST(nn.Module):
         local_node_emb = self.static_mlp(local_node)
         # static_query = self.static_query_fc(torch.cat((local_node_emb, static_query @ station_nodes_emb), dim=-1))
         static_fusion = self.static_attention(torch.cat((local_node_emb, station_nodes_emb), dim=1))
-        static_output = []
+        static_output = [local_node_emb.squeeze(1)]
+        static_out = local_node_emb
         for layer in self.static_attn_layer:
-            static_out = layer(local_node_emb, static_fusion, static_fusion)
+            static_out = layer(static_out, static_fusion, static_fusion)
             static_output.append(static_out.squeeze(1))
-        static_output = torch.cat(static_output, dim=-1)
-        static_output = self.static_attn_fusion(static_output)
+        static_out = torch.cat(static_output, dim=-1)
+        static_output = self.static_attn_fusion(static_out)
 
         _, local_dynamic_h = self.dynamic_local_lstm(local_features.squeeze(2))
         station_dynamic_emb = []
@@ -271,9 +272,10 @@ class NBST(nn.Module):
         nodes = torch.cat((local_dynamic_h.unsqueeze(1), station_dynamic_emb), dim=1)
         dynamic_weight = self.dynamic_attention(nodes).squeeze(-1)
         # dynamic_gcn_out = self.dynamic_gcn(nodes, edge_index, dynamic_weight)
-        dynamic_output = []
+        dynamic_output = [local_dynamic_h]
+        dynamic_out = local_dynamic_h.unsqueeze(1)
         for layer in self.dynamic_attn_layer:
-            dynamic_out = layer(local_dynamic_h.unsqueeze(1), dynamic_weight, dynamic_weight)
+            dynamic_out = layer(dynamic_out, dynamic_weight, dynamic_weight)
             dynamic_output.append(dynamic_out.squeeze(1))
         dynamic_out = torch.cat(dynamic_output, dim=-1)
         dynamic_out = self.dynamic_attn_fusion(dynamic_out)

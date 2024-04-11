@@ -1,10 +1,9 @@
 import numpy as np
 import torch
 from torch import nn
-from torch.nn import CrossEntropyLoss
 from tqdm import tqdm
 
-from src.reference_model.NBST import NBST, NBSTLoss
+from src.reference_model.NBST import NBST
 from src.trainer.reference_base_trainer import ReferenceBaseTrainer
 
 
