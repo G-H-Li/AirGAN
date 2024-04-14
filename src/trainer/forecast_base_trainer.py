@@ -83,6 +83,8 @@ class ForecastBaseTrainer(object):
             self.city_loc = self.train_dataset.nodes
             self.wind_mean, self.wind_std = self.train_dataset.wind_mean, self.train_dataset.wind_std
             self.pm25_mean, self.pm25_std = self.test_dataset.pm25_mean, self.test_dataset.pm25_std
+        elif self.config.dataset_name == 'UrbanAir':
+            pass
         else:
             self.logger.error("Unsupported dataset type")
             raise ValueError('Unknown dataset')

@@ -128,11 +128,11 @@ class SimParser(data.Dataset):
     def __init__(self, config: Config, mode='train'):
         if mode not in ['train', 'valid', 'test']:
             raise ValueError(f'Invalid mode: {mode}')
-        self.nodes = np.load(os.path.join(config.dataset_dir, 'KnowAir_loc_filled.npy'))
-        self.node_attr = np.load(os.path.join(config.dataset_dir, 'KnowAir_node_attr.npy'))
-        self.feature = np.load(os.path.join(config.dataset_dir, 'KnowAir_feature.npy'))
-        self.pm25 = np.load(os.path.join(config.dataset_dir, 'KnowAir_pm25.npy'))
-        self.adj_weighted = np.load(os.path.join(config.dataset_dir, 'KnowAir_weighted_adj.npy'))
+        self.nodes = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_loc_filled.npy'))
+        self.node_attr = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_node_attr.npy'))
+        self.feature = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_feature.npy'))
+        self.pm25 = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_pm25.npy'))
+        self.adj_weighted = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_weighted_adj.npy'))
         self.node_num = self.adj_weighted.shape[0]
         self._process_time(config, mode)
         self._process_feature(config)

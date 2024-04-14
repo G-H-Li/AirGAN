@@ -9,7 +9,7 @@ from shapely import Polygon, LineString, MultiPolygon
 from shapely.wkt import loads
 from geopy.distance import distance
 
-from src.utils.config import Config
+from src.utils.config import Config, ReferConfig
 
 
 class NBST_preprocess:
@@ -25,6 +25,7 @@ class NBST_preprocess:
         # self.process_poi()
 
         self.urban_air_data, self.urban_air_loc_data = self.resort_urban_air()
+        # np.save(os.path.join(config.dataset_dir, 'UrbanAir_loc_filled.npy'), self.urban_air_loc_data)
         self.urban_air_data = self.time_split()
 
         self.calc_link_data()
@@ -114,4 +115,4 @@ class NBST_preprocess:
 
 
 if __name__ == '__main__':
-    preprocess = NBST_preprocess(Config())
+    preprocess = NBST_preprocess(ReferConfig())

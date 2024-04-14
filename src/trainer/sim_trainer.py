@@ -34,6 +34,11 @@ class SimTrainer(ForecastBaseTrainer):
             self.valid_dataset = SimParser(config=self.config, mode='valid')
             self.test_dataset = SimParser(config=self.config, mode='test')
             self.city_num = self.train_dataset.node_num
+        elif self.config.dataset_name == 'UrbanAir':
+            self.train_dataset = SimParser(config=self.config, mode='train')
+            self.valid_dataset = SimParser(config=self.config, mode='valid')
+            self.test_dataset = SimParser(config=self.config, mode='test')
+            self.city_num = self.train_dataset.node_num
         else:
             self.logger.error("Unsupported dataset type")
             raise ValueError('Unknown dataset')
@@ -87,11 +92,11 @@ class SimTrainer(ForecastBaseTrainer):
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
             pm25, feature, locs, emb_feature, in_out_weight = data
-            pm25 = pm25.to(self.device)
-            feature = feature.to(self.device)
+            pm25 = pm25.to(self.device).float()
+            feature = feature.to(self.device).float()
             emb_feature = emb_feature.int().to(self.device)
-            locs = locs.to(self.device)
-            in_out_weight = in_out_weight.to(self.device)
+            locs = locs.to(self.device).float()
+            in_out_weight = in_out_weight.to(self.device).float()
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
@@ -120,11 +125,11 @@ class SimTrainer(ForecastBaseTrainer):
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(valid_loader)):
             pm25, feature, locs, emb_feature, in_out_weight = data
-            pm25 = pm25.to(self.device)
-            feature = feature.to(self.device)
+            pm25 = pm25.to(self.device).float()
+            feature = feature.to(self.device).float()
             emb_feature = emb_feature.int().to(self.device)
-            locs = locs.to(self.device)
-            in_out_weight = in_out_weight.to(self.device)
+            locs = locs.to(self.device).float()
+            in_out_weight = in_out_weight.to(self.device).float()
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
@@ -152,11 +157,11 @@ class SimTrainer(ForecastBaseTrainer):
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
             pm25, feature, locs, emb_feature, in_out_weight = data
-            pm25 = pm25.to(self.device)
-            feature = feature.to(self.device)
+            pm25 = pm25.to(self.device).float()
+            feature = feature.to(self.device).float()
             emb_feature = emb_feature.int().to(self.device)
-            locs = locs.to(self.device)
-            in_out_weight = in_out_weight.to(self.device)
+            locs = locs.to(self.device).float()
+            in_out_weight = in_out_weight.to(self.device).float()
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 

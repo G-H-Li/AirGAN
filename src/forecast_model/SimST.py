@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.nn import Sequential, Linear, GRU, Tanh, Dropout
+from torch.nn import Sequential, Linear, GRU, Tanh, Dropout, GRUCell
 
 
 class SimST(nn.Module):
@@ -35,7 +35,7 @@ class SimST(nn.Module):
                                      Linear(self.hidden_dim // 2, self.hidden_dim),
                                      Tanh())
         self.static_encoder = GRU(self.hidden_dim + 1, self.hidden_dim,
-                                  self.gru_layer, dropout=self.dropout, batch_first=True)
+                                  self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
 
         if self.use_dynamic:
             self.dynamic_mlp = Sequential(Linear(2 + 3 * self.date_emb + self.loc_emb, self.hidden_dim // 2),
@@ -44,10 +44,10 @@ class SimST(nn.Module):
                                           Linear(self.hidden_dim // 2, self.hidden_dim),
                                           Tanh())
             self.dynamic_encoder = GRU(1 + self.hidden_dim, self.hidden_dim,
-                                       self.gru_layer, dropout=self.dropout, batch_first=True)
+                                       self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
 
         if self.use_dynamic:
-            self.pred_mlp = Sequential(Linear(2 * self.hidden_dim, 1),
+            self.pred_mlp = Sequential(Linear(4 * self.hidden_dim, 1),
                                        Tanh())
         # else:
         #     self.pred_mlp = Sequential(Linear(self.loc_emb + 3*self.date_emb + self.hidden_dim, 1),
@@ -58,7 +58,7 @@ class SimST(nn.Module):
         # features: Batch_size, 2, hist_len+pred_len, feature_nums
         # city_locs: Batch_size, 2
         # date_emb: Batch_size, hist_len+pred_len, 3
-        # in_out_weight: Batch_size, hist_len+pred_len, 3
+        # in_out_weight: Batch_size, hist_len+pred_len, 2
         pred_pm25 = []
         features = features.transpose(1, 2)
         batch_size = features.shape[0]
@@ -88,7 +88,7 @@ class SimST(nn.Module):
                 dynamic_graph_emb = self.dynamic_mlp(dynamic_graph_emb)
                 dynamic_graph_emb = torch.cat((dynamic_graph_emb, xn[:, :hist_len + i]), dim=-1)
                 dynamic_out, dynamic_hidden = self.dynamic_encoder(dynamic_graph_emb, static_hidden)
-                pred = torch.cat([static_hidden[-1], dynamic_hidden[-1]], dim=1)
+                pred = torch.cat([static_hidden[-1], static_hidden[-2], dynamic_hidden[-1], dynamic_hidden[-2]], dim=1)
             else:
                 pred = torch.cat([city_loc_emb, month_emb, weekday_emb, hour_emb, static_hidden[-1]], dim=1)
             pred = self.pred_mlp(pred)

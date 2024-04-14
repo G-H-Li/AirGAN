@@ -2,6 +2,7 @@ import os
 from collections import OrderedDict
 
 import numpy as np
+import pandas as pd
 from bresenham import bresenham
 from geopy.distance import geodesic
 from matplotlib import pyplot as plt
@@ -15,23 +16,72 @@ from src.utils.config import Config
 
 class SimSTGraph:
     def __init__(self, config):
+        self.altitude_threshold = None
+        self.distance_threshold = None
+        self.features_path = None
+        self.use_altitude = None
+        self.norm_adj_matrix = None
+        self.node_attr = None
+        self.weight_adj_matrix = None
+        self.node_num = None
+        self.nodes = None
+        self.altitude = None
+        self.pm25_path = None
+        self.altitude_path = None
+        self.city_path = None
+
+        self.config = config
+        if self.config.dataset_name == 'KnowAir':
+            self.convert_KnowAir_to_SimST()
+        elif self.config.dataset_name == 'UrbanAir':
+            self.convert_UrbanAir_to_SimST()
+        else:
+            raise NotImplementedError
+
+    def convert_UrbanAir_to_SimST(self):
+        self.distance_threshold = 50
+        self.city_path = os.path.join(self.config.dataset_dir, 'UrbanAir_loc_filled.npy')
+        self.features_path = os.path.join(self.config.dataset_dir, 'UrbanAir_features.npy')
+        features = np.load(self.features_path)
+        feature = self._resort_urban_air_features(features)
+        pm25 = feature[:, :, [0]]
+        wind_speed = feature[:, :, [4]]
+        wind_direction = (feature[:, :, [5]] - 1) * 45
+        wind_direction = np.where(wind_direction < 0, 0, wind_direction)
+        hour = feature[:, :, [8]]
+        weekday = feature[:, :, [7]] + 1
+        month = feature[:, :, [6]]
+        feature = np.concatenate((feature[:, :, 1:4], hour, weekday, month, wind_speed, wind_direction), axis=-1)
+
+        self.nodes = self._gen_nodes_urban_air()
+        self.node_num = len(self.nodes)
+        self.weight_adj_matrix, self.node_attr = self.get_weight_adj_UrbanAir()
+        self.norm_adj_matrix = self.get_norm_wighted_adjacency_matrix()
+
+        np.save(os.path.join(self.config.dataset_dir, 'UrbanAir_pm25.npy'), pm25)
+        np.save(os.path.join(self.config.dataset_dir, 'UrbanAir_feature.npy'), feature)
+        np.save(os.path.join(self.config.dataset_dir, 'UrbanAir_weighted_adj.npy'), self.norm_adj_matrix)
+        np.save(os.path.join(self.config.dataset_dir, 'UrbanAir_node_attr.npy'), self.node_attr)
+
+    def convert_KnowAir_to_SimST(self):
+        self.use_altitude = True
         self.distance_threshold = 3
         self.altitude_threshold = 1200
-        self.use_altitude = True
-        self.city_path = os.path.join(config.dataset_dir, 'KnowAir_city.txt')
-        self.altitude_path = os.path.join(config.dataset_dir, 'KnowAir_altitude.npy')
-        self.pm25_path = os.path.join(config.dataset_dir, 'KnowAir_pm25.npy')
+        self.city_path = os.path.join(self.config.dataset_dir, 'KnowAir_city.txt')
+        self.altitude_path = os.path.join(self.config.dataset_dir, 'KnowAir_altitude.npy')
+        self.pm25_path = os.path.join(self.config.dataset_dir, 'KnowAir_pm25.npy')
         # self.pm25_level = self._cal_pm25_category()
         # self.pm25_trend = self._cal_pm25_trend(0.3)
-        self.altitude = self._load_altitude()
+        if self.use_altitude:
+            self.altitude = self._load_altitude()
         self.nodes = self._gen_nodes()
         self.node_num = len(self.nodes)
         self.weight_adj_matrix, self.node_attr = self.get_weight_adj()
         self.norm_adj_matrix = self.get_norm_wighted_adjacency_matrix()
         # np.save(os.path.join(config.dataset_dir, 'KnowAir_PM25_level.npy'), self.pm25_level)
         # np.save(os.path.join(config.dataset_dir, 'KnowAir_PM25_trend.npy'), self.pm25_trend)
-        np.save(os.path.join(config.dataset_dir, 'KnowAir_weighted_adj.npy'), self.norm_adj_matrix)
-        np.save(os.path.join(config.dataset_dir, 'KnowAir_node_attr.npy'), self.node_attr)
+        np.save(os.path.join(self.config.dataset_dir, 'KnowAir_weighted_adj.npy'), self.norm_adj_matrix)
+        np.save(os.path.join(self.config.dataset_dir, 'KnowAir_node_attr.npy'), self.node_attr)
 
     def _cal_pm25_category(self):
         assert os.path.isfile(self.pm25_path)
@@ -44,7 +94,6 @@ class SimSTGraph:
         level_6 = np.where(250 < pm25, 6, 0)
         pm25_level = level_1 + level_2 + level_3 + level_4 + level_5 + level_6
         return pm25_level
-
 
     def _cal_pm25_trend(self, delta):
         assert os.path.isfile(self.pm25_path)
@@ -78,6 +127,22 @@ class SimSTGraph:
                 altitude = self.altitude[y, x]
                 nodes.update({idx: {'city': city, 'altitude': altitude, 'lon': lon, 'lat': lat}})
         return nodes
+
+    def _gen_nodes_urban_air(self):
+        return np.load(self.city_path)
+
+    def _resort_urban_air_features(self, features):
+        size = features.shape[0]
+        time_len = features.shape[1]
+        feature = []
+        for i in range(size):
+            if i != size - 1:
+                feature.append(features[i, 0])
+            else:
+                for j in range(time_len):
+                    feature.append(features[i, j])
+        feature = np.stack(feature, axis=0, dtype='float32')
+        return feature
 
     def _lonlat2xy(self, lon, lat, is_altitude):
         """
@@ -163,6 +228,49 @@ class SimSTGraph:
         norm_m = B @ mat @ B
         return norm_m
 
+    def get_weight_adj_UrbanAir(self):
+        # cal distance
+        distance = []
+        direction = []
+        for i in range(self.node_num):
+            dist, direc = self._cal_distance(self.nodes[i, 1], self.nodes[i, 0], self.nodes[:, 1], self.nodes[:, 0])
+            distance.append(dist)
+            direction.append(direc)
+        dist = np.array(distance)
+        direc = np.array(direction)
+        node_attr = np.concatenate((dist[..., np.newaxis], direc[..., np.newaxis]), axis=-1)
+        adj = np.zeros((self.node_num, self.node_num), dtype=np.uint8)
+        adj[dist <= self.distance_threshold] = 1
+        dis_std = np.std(dist)
+        weight_adj = np.exp(-np.square(dist) / np.square(dis_std)) * adj
+
+        return weight_adj, node_attr
+
+    def _cal_distance(self, lat1, lon1, lat2, lon2):
+        R = 6371.0  # 地球平均半径（单位：公里）
+
+        # 将经纬度转换为弧度
+        lat1_rad = np.radians(lat1)
+        lon1_rad = np.radians(lon1)
+        lat2_rad = np.radians(lat2)
+        lon2_rad = np.radians(lon2)
+
+        # 计算经纬度差值
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+
+        # 使用 Haversine 公式计算距离
+        a = np.sin(dlat / 2) ** 2 + np.cos(lat1_rad) * np.cos(lat2_rad) * np.sin(dlon / 2) ** 2
+        c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+        distance = R * c
+
+        # 计算方向角度
+        y = np.sin(lon2_rad - lon1_rad) * np.cos(lat2_rad)
+        x = np.cos(lat1_rad) * np.sin(lat2_rad) - np.sin(lat1_rad) * np.cos(lat2_rad) * np.cos(lon2_rad - lon1_rad)
+        direction = np.degrees(np.arctan2(y, x))
+        direction = np.where(direction < 0, direction + 360, direction)  # 确保方向角在 0 到 360 度之间
+
+        return distance, direction
 
 if __name__ == '__main__':
     a = SimSTGraph(Config())

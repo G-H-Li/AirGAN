@@ -152,9 +152,7 @@ class NBST(nn.Module):
         self.attn_layer = attn_layer
         self.gru_layer = 2
 
-        self.sigma_d = nn.Parameter(2 * torch.rand(1, device=self.device, requires_grad=True) - 1)
-        self.sigma_r = nn.Parameter(2 * torch.rand(1, device=self.device, requires_grad=True) - 1)
-        self.sigma_w = nn.Parameter(2 * torch.rand(1, device=self.device, requires_grad=True) - 1)
+        self.sigma_h = nn.Parameter(torch.randn(1, device=self.device, requires_grad=True))
 
         # self.pm25_emb = nn.Embedding(6, self.emb_dim)
         self.weather_emb = nn.Embedding(17, self.emb_dim)
@@ -199,32 +197,10 @@ class NBST(nn.Module):
                                                  Linear(2 * self.hidden_dim, self.hidden_dim),
                                                  ReLU())
 
-        self.pred_infer_mlp = Sequential(Linear(2 * self.hidden_dim, self.hidden_dim),
+        self.pred_infer_mlp = Sequential(Linear(2 * self.hidden_dim + 1, self.hidden_dim),
                                          ReLU(),
                                          Linear(self.hidden_dim, 1),
                                          Tanh())
-
-    def cal_pearson_corr(self, x, y):
-        vx = x - torch.mean(x, dim=-1, keepdim=True)
-        vy = y - torch.mean(y, dim=-1, keepdim=True)
-        corr = torch.sum(vx * vy, dim=-1) / (
-                torch.sqrt(torch.sum(vx ** 2, dim=-1)) * torch.sqrt(torch.sum(vy ** 2, dim=-1)))
-        return corr
-
-    def cal_static_corr(self, dist, local_node, station_nodes):
-        dist_cor = torch.exp(-torch.square(dist / self.sigma_d) / 2)
-        pearson_cor = self.cal_pearson_corr(local_node, station_nodes)
-        pearson_cor = torch.exp(-torch.square(pearson_cor / self.sigma_r) / 2)
-        static_cor = dist_cor * pearson_cor
-        static_cor = static_cor / torch.sum(static_cor, dim=1, keepdim=True)
-        return static_cor.unsqueeze(1)
-
-    def cal_dynamic_corr(self, wind_direc, sta_direc):
-        direc = torch.abs((wind_direc - 1) * 45 - sta_direc - 180)
-        direc = (direc - direc.mean(dim=1, keepdim=True)) / direc.std(dim=1, keepdim=True)
-        direc_cor = -torch.square(direc)
-        dynamic_cor = softmax(direc_cor, dim=1)
-        return dynamic_cor
 
     def forward(self, station_dist,
                 local_node, local_features, local_emb,
@@ -281,10 +257,12 @@ class NBST(nn.Module):
         dynamic_out = self.dynamic_attn_fusion(dynamic_out)
 
         preds = []
+        h0 = self.sigma_h * torch.ones((batch_size, 1), device=self.device)
         for i in range(seq_len):
-            pred_in = torch.cat((static_output, dynamic_out), dim=-1)
+            pred_in = torch.cat((static_output, dynamic_out, h0), dim=-1)
             pred_out = self.pred_infer_mlp(pred_in)
             preds.append(pred_out)
+            h0 = pred_out
         pred_out = torch.stack(preds, dim=1)
         pred = pred_out.view(batch_size, seq_len, -1)
 
