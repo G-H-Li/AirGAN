@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.nn import Sequential, Linear, GRU, Tanh, Dropout, GRUCell
+from torch.nn import Sequential, Linear, GRU, Tanh, Dropout, GRUCell, ReLU
 
 
 class SimST(nn.Module):
@@ -27,28 +27,24 @@ class SimST(nn.Module):
         self.emb_hour = nn.Embedding(24, self.date_emb)
 
         self.loc_mlp = Sequential(Linear(2, self.loc_emb),
-                                  Tanh())
+                                  ReLU())
 
         self.static_mlp = Sequential(Linear(self.in_dim * 2, self.hidden_dim // 2),
-                                     Tanh(),
+                                     ReLU(),
                                      Dropout(self.dropout),
                                      Linear(self.hidden_dim // 2, self.hidden_dim),
-                                     Tanh())
-        self.static_encoder = GRU(self.hidden_dim + 1, self.hidden_dim,
-                                  self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
+                                     ReLU())
 
-        if self.use_dynamic:
-            self.dynamic_mlp = Sequential(Linear(2 + 3 * self.date_emb + self.loc_emb, self.hidden_dim // 2),
-                                          Tanh(),
-                                          Dropout(self.dropout),
-                                          Linear(self.hidden_dim // 2, self.hidden_dim),
-                                          Tanh())
-            self.dynamic_encoder = GRU(1 + self.hidden_dim, self.hidden_dim,
-                                       self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
+        self.dynamic_mlp = Sequential(Linear(2 + 3 * self.date_emb + self.loc_emb, self.hidden_dim // 2),
+                                      ReLU(),
+                                      Dropout(self.dropout),
+                                      Linear(self.hidden_dim // 2, self.hidden_dim),
+                                      ReLU())
+        self.dynamic_encoder = GRU(1 + 2 * self.hidden_dim, self.hidden_dim,
+                                   self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
 
-        if self.use_dynamic:
-            self.pred_mlp = Sequential(Linear(4 * self.hidden_dim, 1),
-                                       Tanh())
+        self.pred_mlp = Sequential(Linear(2 * self.hidden_dim, 1),
+                                   Tanh())
         # else:
         #     self.pred_mlp = Sequential(Linear(self.loc_emb + 3*self.date_emb + self.hidden_dim, 1),
         #                                Tanh())
@@ -72,25 +68,17 @@ class SimST(nn.Module):
         all_hour_emb = self.emb_hour(date_emb[:, :, 0])
         city_loc_emb = self.loc_mlp(city_locs.float())
         for i in range(pred_len):
-            month_emb = all_month_emb[:, hist_len + i]
-            weekday_emb = all_weekday_emb[:, hist_len + i]
-            hour_emb = all_hour_emb[:, hist_len + i]
             static_graph_emb = self.static_mlp(features[:, :hist_len + i])
             static_graph_emb = torch.cat((static_graph_emb, xn[:, :hist_len + i]), dim=-1)
-            static_out, static_hidden = self.static_encoder(static_graph_emb)
-
-            if self.use_dynamic:
-                dynamic_graph_emb = torch.cat([city_loc_emb.view(batch_size, 1, -1).repeat(1, i+hist_len, 1),
-                                               in_out_weight[:, :hist_len + i],
-                                               all_month_emb[:, :hist_len + i],
-                                               all_weekday_emb[:, :hist_len + i],
-                                               all_hour_emb[:, :hist_len + i]], dim=-1)
-                dynamic_graph_emb = self.dynamic_mlp(dynamic_graph_emb)
-                dynamic_graph_emb = torch.cat((dynamic_graph_emb, xn[:, :hist_len + i]), dim=-1)
-                dynamic_out, dynamic_hidden = self.dynamic_encoder(dynamic_graph_emb, static_hidden)
-                pred = torch.cat([static_hidden[-1], static_hidden[-2], dynamic_hidden[-1], dynamic_hidden[-2]], dim=1)
-            else:
-                pred = torch.cat([city_loc_emb, month_emb, weekday_emb, hour_emb, static_hidden[-1]], dim=1)
+            dynamic_graph_emb = torch.cat([city_loc_emb.view(batch_size, 1, -1).repeat(1, i+hist_len, 1),
+                                           in_out_weight[:, :hist_len + i],
+                                           all_month_emb[:, :hist_len + i],
+                                           all_weekday_emb[:, :hist_len + i],
+                                           all_hour_emb[:, :hist_len + i]], dim=-1)
+            dynamic_graph_emb = self.dynamic_mlp(dynamic_graph_emb)
+            dynamic_graph_emb = torch.cat((dynamic_graph_emb, static_graph_emb), dim=-1)
+            dynamic_out, dynamic_hidden = self.dynamic_encoder(dynamic_graph_emb)
+            pred = torch.cat([dynamic_hidden[-1], dynamic_hidden[-2]], dim=1)
             pred = self.pred_mlp(pred)
             pred_pm25.append(pred)
             xn = torch.cat((xn, pred.unsqueeze(1)), dim=1)
