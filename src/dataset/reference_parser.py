@@ -8,7 +8,7 @@ from src.utils.scaler import StandardScaler
 
 
 class NBSTParser(data.Dataset):
-    def __init__(self, config, node_ids: list = None, mode: str = 'train'):
+    def __init__(self, config, station_node_ids: list = None, local_nodes_ids: list = None, mode: str = 'train'):
         if mode not in ['train', 'valid']:
             raise ValueError(f'Invalid mode: {mode}')
         self.mode = mode
@@ -18,9 +18,10 @@ class NBSTParser(data.Dataset):
         self.time_len = self.features.shape[1]
         self._calc_mean_std()
 
-        self.get_stations(node_ids)
+        station_nodes, station_features = self.get_stations(station_node_ids)
+        local_nodes, local_features = self.get_stations(local_nodes_ids)
         self.local_features, self.local_nodes, self.station_features, self.station_nodes = self.split_station_and_local(
-            node_ids)
+            local_nodes_ids, station_nodes, station_features, local_nodes, local_features)
         # process_pm25 = np.vectorize(self._process_pm25)
         self.pm25_label = self.local_features[:, :, :, 0]
         # pm25_features = process_pm25(self.station_features[:, :, :, [0]])
@@ -67,41 +68,25 @@ class NBSTParser(data.Dataset):
         self.pm25_std = self.pm25.std()
 
     def get_stations(self, node_ids: list):
-        if self.mode == 'train':
-            self.nodes = self.nodes[node_ids]
-            self.features = self.features[:, :, node_ids]
+        nodes = self.nodes[node_ids]
+        features = self.features[:, :, node_ids]
+        return nodes, features
 
-    def split_station_and_local(self, node_ids):
+    def split_station_and_local(self, node_ids, station_nodes, station_features, local_nodes, local_features):
         node_num = len(node_ids)
-        local_features = []
-        local_nodes = []
-        station_features = []
-        station_nodes = []
-        if self.mode == 'train':
-            for i in range(self.features.shape[0]):
-                for j in range(node_num):
-                    local_features.append(self.features[i, :, j].reshape(1, self.time_len, 1, -1))
-                    local_nodes.append(self.nodes[j].reshape(1, 1, -1))
-                    bool_index = np.ones(node_num, dtype=bool)
-                    bool_index[j] = False
-                    station_features.append(self.features[i, :, bool_index].reshape(1, self.time_len, node_num - 1, -1))
-                    station_nodes.append(self.nodes[bool_index, :].reshape(1, node_num - 1, -1))
-            local_features = np.concatenate(local_features, axis=0)
-            station_features = np.concatenate(station_features, axis=0)
-            local_nodes = np.concatenate(local_nodes, axis=0)
-            station_nodes = np.concatenate(station_nodes, axis=0)
-        elif self.mode == 'valid':
-            for i in node_ids:
-                local_features.append(self.features[:, :, i].reshape(self.features.shape[0], self.time_len, 1, -1))
-                local_nodes.append(self.nodes[i].reshape(1, 1, -1).repeat(self.features.shape[0], axis=0))
-            bool_index = np.ones(self.features.shape[2], dtype=bool)
-            bool_index[node_ids] = False
-            station_features = self.features[:, :, bool_index]
-            station_features = station_features.repeat(len(node_ids), axis=0)
-            station_nodes = (self.nodes[bool_index, :]
-                             .reshape(1, station_features.shape[2], -1).repeat(station_features.shape[0], axis=0))
-            local_features = np.concatenate(local_features, axis=0)
-            local_nodes = np.concatenate(local_nodes, axis=0)
+        local_feature = []
+        local_node = []
+        station_feature = []
+        station_node = []
+        for i in range(node_num):
+            station_feature.append(station_features)
+            station_node.append(station_nodes.reshape(1, station_nodes.shape[0], -1).repeat(station_features.shape[0], axis=0))
+            local_feature.append(local_features[:, :, [i], :])
+            local_node.append(local_nodes[i].reshape(1, 1, -1).repeat(station_features.shape[0], axis=0))
+        local_features = np.concatenate(local_feature, axis=0)
+        station_features = np.concatenate(station_feature, axis=0)
+        local_nodes = np.concatenate(local_node, axis=0)
+        station_nodes = np.concatenate(station_node, axis=0)
         return local_features, local_nodes, station_features, station_nodes
 
     def _process_feature(self, config):
@@ -168,7 +153,7 @@ class NBSTParser(data.Dataset):
 
 
 class ReferParser(data.Dataset):
-    def __init__(self, config, node_ids: list = None, mode: str = 'train'):
+    def __init__(self, config, station_node_ids: list = None, local_nodes_ids: list = None, mode: str = 'train'):
         super(ReferParser, self).__init__()
         if mode not in ['train', 'valid']:
             raise ValueError(f'Invalid mode: {mode}')
@@ -179,9 +164,10 @@ class ReferParser(data.Dataset):
         self.time_len = self.features.shape[1]
         self._calc_mean_std()
 
-        self.get_stations(node_ids)
+        station_nodes, station_features = self.get_stations(station_node_ids)
+        local_nodes, local_features = self.get_stations(local_nodes_ids)
         self.local_features, self.local_nodes, self.station_features, self.station_nodes = self.split_station_and_local(
-            node_ids)
+            local_nodes_ids, station_nodes, station_features, local_nodes, local_features)
         self.pm25_label = self.local_features[:, :, :, 0]
         self.local_features = self.local_features[:, :, :, 1:]
 
@@ -232,41 +218,25 @@ class ReferParser(data.Dataset):
         self.pm25_std = self.pm25.std()
 
     def get_stations(self, node_ids: list):
-        if self.mode == 'train':
-            self.nodes = self.nodes[node_ids]
-            self.features = self.features[:, :, node_ids]
+        nodes = self.nodes[node_ids]
+        features = self.features[:, :, node_ids]
+        return nodes, features
 
-    def split_station_and_local(self, node_ids):
+    def split_station_and_local(self, node_ids, station_nodes, station_features, local_nodes, local_features):
         node_num = len(node_ids)
-        local_features = []
-        local_nodes = []
-        station_features = []
-        station_nodes = []
-        if self.mode == 'train':
-            for i in range(self.features.shape[0]):
-                for j in range(node_num):
-                    local_features.append(self.features[i, :, j].reshape(1, self.time_len, 1, -1))
-                    local_nodes.append(self.nodes[j].reshape(1, 1, -1))
-                    bool_index = np.ones(node_num, dtype=bool)
-                    bool_index[j] = False
-                    station_features.append(self.features[i, :, bool_index].reshape(1, self.time_len, node_num - 1, -1))
-                    station_nodes.append(self.nodes[bool_index, :].reshape(1, node_num - 1, -1))
-            local_features = np.concatenate(local_features, axis=0)
-            station_features = np.concatenate(station_features, axis=0)
-            local_nodes = np.concatenate(local_nodes, axis=0)
-            station_nodes = np.concatenate(station_nodes, axis=0)
-        elif self.mode == 'valid':
-            for i in node_ids:
-                local_features.append(self.features[:, :, i].reshape(self.features.shape[0], self.time_len, 1, -1))
-                local_nodes.append(self.nodes[i].reshape(1, 1, -1).repeat(self.features.shape[0], axis=0))
-            bool_index = np.ones(self.features.shape[2], dtype=bool)
-            bool_index[node_ids] = False
-            station_features = self.features[:, :, bool_index]
-            station_features = station_features.repeat(len(node_ids), axis=0)
-            station_nodes = (self.nodes[bool_index, :]
-                             .reshape(1, station_features.shape[2], -1).repeat(station_features.shape[0], axis=0))
-            local_features = np.concatenate(local_features, axis=0)
-            local_nodes = np.concatenate(local_nodes, axis=0)
+        local_feature = []
+        local_node = []
+        station_feature = []
+        station_node = []
+        for i in range(node_num):
+            station_feature.append(station_features)
+            station_node.append(station_nodes.reshape(1, station_nodes.shape[0], -1).repeat(station_features.shape[0], axis=0))
+            local_feature.append(local_features[:, :, [i], :])
+            local_node.append(local_nodes[i].reshape(1, 1, -1).repeat(station_features.shape[0], axis=0))
+        local_features = np.concatenate(local_feature, axis=0)
+        station_features = np.concatenate(station_feature, axis=0)
+        local_nodes = np.concatenate(local_node, axis=0)
+        station_nodes = np.concatenate(station_node, axis=0)
         return local_features, local_nodes, station_features, station_nodes
 
     def _cal_distance(self, lat1, lon1, lat2, lon2):
@@ -305,64 +275,77 @@ class ReferParser(data.Dataset):
 
 
 class ReferenceMLParser:
-    def __init__(self, config, node_ids: list = None, mode: str = 'train'):
-        self.mode = mode
+    def __init__(self, config, station_node_ids: list = None, local_node_ids: list = None):
         self.nodes = np.load(os.path.join(config.dataset_dir, 'UrbanAir_loc.npy'))
         self.features = np.load(os.path.join(config.dataset_dir, 'UrbanAir_features.npy'))
         self.pm25 = self.features[:, :, :, 0]
         self.time_len = self.features.shape[1]
         self._calc_mean_std()
 
-        self.get_stations(node_ids)
-        features, nodes = self.split_station_and_local(node_ids)
-        self.pm25_label = features[:, :, :, 0].reshape(-1, 1)
-        self.features = np.concatenate((features[:, :, :, 1:], nodes), axis=-1)
+        valid_local_nodes_ids = local_node_ids[:int(len(local_node_ids) * 0.5)]
+        train_local_nodes_ids = local_node_ids[int(len(local_node_ids) * 0.5):]
+        station_nodes, station_features = self.get_stations(station_node_ids)
+        train_local_nodes, train_local_features = self.get_stations(train_local_nodes_ids)
+        valid_local_nodes, valid_local_features = self.get_stations(valid_local_nodes_ids)
 
-        self.features_std = self.features.std(axis=(2, 1, 0))
-        self.features_mean = self.features.mean(axis=(2, 1, 0))
-        self.feature_scaler = StandardScaler(mean=self.features_mean, std=self.features_std)
+        self.train_features, self.train_pm25_label = self.split_local(station_nodes, station_features,
+                                                                      train_local_features, train_local_nodes_ids)
+        self.valid_features, self.valid_pm25_label = self.split_local(station_nodes, station_features,
+                                                                      valid_local_features, valid_local_nodes_ids)
+
+        self.train_features_std = self.train_features.std(axis=(2, 1, 0))
+        self.train_features_mean = self.train_features.mean(axis=(2, 1, 0))
+        self.train_feature_scaler = StandardScaler(mean=self.train_features_mean, std=self.train_features_std)
+        self.valid_features_std = self.valid_features.std(axis=(2, 1, 0))
+        self.valid_features_mean = self.valid_features.mean(axis=(2, 1, 0))
+        self.valid_feature_scaler = StandardScaler(mean=self.valid_features_mean, std=self.valid_features_std)
         self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
 
-        self.features = self.feature_scaler.normalize(self.features)
-        self.pm25_label = self.pm25_scaler.normalize(self.pm25_label)
+        self.train_features = self.train_feature_scaler.normalize(self.train_features)
+        self.train_pm25_label = self.pm25_scaler.normalize(self.train_pm25_label)
+        self.valid_features = self.valid_feature_scaler.normalize(self.valid_features)
+        self.valid_pm25_label = self.pm25_scaler.normalize(self.valid_pm25_label)
 
-        self.features = self.features.reshape(self.features.shape[0] * self.time_len, -1)
+        self.train_features = self.train_features.reshape(self.train_features.shape[0] * self.time_len, -1)
+        self.train_pm25_label = self.train_pm25_label.reshape(self.train_pm25_label.shape[0] * self.time_len, -1)
+
+        self.valid_features = self.valid_features.reshape(self.valid_features.shape[0] * self.time_len, -1)
+        self.valid_pm25_label = self.valid_pm25_label.reshape(self.valid_pm25_label.shape[0] * self.time_len, -1)
 
     def _calc_mean_std(self):
         self.pm25_mean = self.pm25.mean()
         self.pm25_std = self.pm25.std()
 
     def get_stations(self, node_ids: list):
-        if self.mode == 'train':
-            self.nodes = self.nodes[node_ids]
-            self.features = self.features[:, :, node_ids]
+        nodes = self.nodes[node_ids]
+        features = self.features[:, :, node_ids]
+        return nodes, features
 
-    def split_station_and_local(self, node_ids):
-        node_num = len(node_ids)
+    def split_local(self, station_nodes, station_features, local_features, local_nodes_ids):
+        node_num = len(local_nodes_ids)
+        station_num = station_nodes.shape[0]
         features = []
-        nodes = []
-        if self.mode == 'train':
-            for i in range(self.features.shape[0]):
-                for j in range(node_num):
-                    features.append(self.features[i, :, j].reshape(1, self.time_len, 1, -1))
-                    nodes.append(self.nodes[j].reshape(1, 1, 1, -1).repeat(repeats=self.time_len, axis=1))
-            features = np.concatenate(features, axis=0)
-            nodes = np.concatenate(nodes, axis=0)
-        elif self.mode == 'valid':
-            for i in node_ids:
-                features.append(self.features[:, :, i].reshape(self.features.shape[0], self.time_len, 1, -1))
-                nodes.append(np.tile(self.nodes[i].reshape(1, 1, 1, -1), (self.features.shape[0], self.time_len, 1, 1)))
-            features = np.concatenate(features, axis=0)
-            nodes = np.concatenate(nodes, axis=0)
-        return features, nodes
+        label = []
+        for i in range(node_num):
+            label.append(local_features[:, :, i, 0])
+            nodes = np.tile(station_nodes.reshape(1, 1, station_num, -1),
+                            (station_features.shape[0], self.time_len, 1, 1))
+            features.append(np.concatenate([station_features, nodes], axis=-1))
+        features = np.concatenate(features, axis=0)
+        label = np.concatenate(label, axis=0)
+        return features, label
 
-    def get_data(self):
-        return self.features, self.pm25_label
+    def get_data(self, mode: str = 'train'):
+        if mode == 'train':
+            return self.train_features, self.train_pm25_label
+        elif mode == 'valid':
+            return self.valid_features, self.valid_pm25_label
 
 
 if __name__ == '__main__':
     config = ReferConfig(config_filename='refer_base_config.yaml')
     config.model_name = 'ASTGC'
-    parser = ReferParser(config, [2, 5, 6, 8, 10, 11], mode='train')
-    a = parser.__getitem__(1)
+    # a = ReferenceMLParser(config, [2, 5, 6, 8, 10, 11], [1, 3, 4])
+    parser = ReferParser(config, [2, 5, 6, 8, 10, 11], [1, 3, 4], mode='train')
+    # a = parser.__getitem__(1)
     print(a)

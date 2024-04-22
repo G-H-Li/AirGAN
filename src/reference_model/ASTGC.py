@@ -15,13 +15,15 @@ class ASTGC(nn.Module):
 
         self.target_fc = nn.Sequential(nn.Linear(self.node_in_dim, self.hidden_dim),
                                        nn.ReLU())
-        self.target_tcn = TCN(self.in_dim - 1, [self.hidden_dim])
+        self.target_tcn = nn.Sequential(TCN(self.in_dim - 1, [self.hidden_dim]),
+                                        nn.ReLU())
 
         self.target_fusion_fc = nn.Sequential(nn.Linear(2 * self.seq_len * self.hidden_dim, self.hidden_dim),
                                               nn.ReLU())
 
         self.station_gcn = GCNConv(self.node_in_dim, self.hidden_dim, cached=True, node_dim=1, normalize=False)
-        self.station_tcn = TCN(self.in_dim, [self.hidden_dim])
+        self.station_tcn = nn.Sequential(TCN(self.in_dim, [self.hidden_dim]),
+                                        nn.ReLU())
         self.station_fusion_fc = nn.Sequential(nn.Linear(2 * self.seq_len * self.hidden_dim, self.hidden_dim),
                                                nn.ReLU())
 

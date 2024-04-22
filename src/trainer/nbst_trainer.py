@@ -32,8 +32,8 @@ class NBSTTrainer(ReferenceBaseTrainer):
             raise NotImplementedError
 
     def _get_criterion(self):
-        return nn.L1Loss()
-        # return nn.MSELoss()
+        # return nn.L1Loss()
+        return nn.MSELoss()
         # return NBSTLoss(self.pm25_std, self.pm25_mean, self.config.alpha, self.device)
 
     def _get_optimizer(self):

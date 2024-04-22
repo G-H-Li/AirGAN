@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.nn import Sequential, Linear, GRU, Tanh, Dropout, GRUCell, ReLU
+from torch.nn import Sequential, Linear, GRU, Tanh, Dropout, GRUCell, Tanh
 
 
 class SimST(nn.Module):
@@ -27,19 +27,19 @@ class SimST(nn.Module):
         self.emb_hour = nn.Embedding(24, self.date_emb)
 
         self.loc_mlp = Sequential(Linear(2, self.loc_emb),
-                                  ReLU())
+                                  Tanh())
 
         self.static_mlp = Sequential(Linear(self.in_dim * 2, self.hidden_dim // 2),
-                                     ReLU(),
+                                     Tanh(),
                                      Dropout(self.dropout),
                                      Linear(self.hidden_dim // 2, self.hidden_dim),
-                                     ReLU())
+                                     Tanh())
 
         self.dynamic_mlp = Sequential(Linear(2 + 3 * self.date_emb + self.loc_emb, self.hidden_dim // 2),
-                                      ReLU(),
+                                      Tanh(),
                                       Dropout(self.dropout),
                                       Linear(self.hidden_dim // 2, self.hidden_dim),
-                                      ReLU())
+                                      Tanh())
         self.dynamic_encoder = GRU(1 + 2 * self.hidden_dim, self.hidden_dim,
                                    self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
 
@@ -56,12 +56,14 @@ class SimST(nn.Module):
         # date_emb: Batch_size, hist_len+pred_len, 3
         # in_out_weight: Batch_size, hist_len+pred_len, 2
         pred_pm25 = []
+        # 消融实验1, 去除额外静态邻近特征
+        # features = features[:, [0], :, :]
         features = features.transpose(1, 2)
         batch_size = features.shape[0]
         hist_len = pm25_hist.shape[1]
         pred_len = features.shape[1] - hist_len
         features = features.reshape(batch_size, features.shape[1], -1)
-        # xn = pm25_hist.view(batch_size, -1)
+        
         xn = pm25_hist
         all_month_emb = self.emb_month(date_emb[:, :, 2] - 1)
         all_weekday_emb = self.emb_weekday(date_emb[:, :, 1] - 1)
@@ -71,7 +73,7 @@ class SimST(nn.Module):
             static_graph_emb = self.static_mlp(features[:, :hist_len + i])
             static_graph_emb = torch.cat((static_graph_emb, xn[:, :hist_len + i]), dim=-1)
             dynamic_graph_emb = torch.cat([city_loc_emb.view(batch_size, 1, -1).repeat(1, i+hist_len, 1),
-                                           in_out_weight[:, :hist_len + i],
+                                           in_out_weight[:, :hist_len + i],   # 消融实验1，去除动态传播特征
                                            all_month_emb[:, :hist_len + i],
                                            all_weekday_emb[:, :hist_len + i],
                                            all_hour_emb[:, :hist_len + i]], dim=-1)
@@ -79,8 +81,23 @@ class SimST(nn.Module):
             dynamic_graph_emb = torch.cat((dynamic_graph_emb, static_graph_emb), dim=-1)
             dynamic_out, dynamic_hidden = self.dynamic_encoder(dynamic_graph_emb)
             pred = torch.cat([dynamic_hidden[-1], dynamic_hidden[-2]], dim=1)
+            # pred = dynamic_hidden[-1]  # 消融实验3 去除双向GRU
             pred = self.pred_mlp(pred)
             pred_pm25.append(pred)
             xn = torch.cat((xn, pred.unsqueeze(1)), dim=1)
+        # 消融实验2，去除动态传播特征
+        # static_graph_emb = self.static_mlp(features[:, :hist_len])
+        # static_graph_emb = torch.cat((static_graph_emb, xn[:, :hist_len]), dim=-1)
+        # dynamic_graph_emb = torch.cat([city_loc_emb.view(batch_size, 1, -1).repeat(1, hist_len, 1),
+        #                                in_out_weight[:, :hist_len],
+        #                                all_month_emb[:, :hist_len],
+        #                                all_weekday_emb[:, :hist_len],
+        #                                all_hour_emb[:, :hist_len]], dim=-1)
+        # dynamic_graph_emb = self.dynamic_mlp(dynamic_graph_emb)
+        # dynamic_graph_emb = torch.cat((dynamic_graph_emb, static_graph_emb), dim=-1)
+        # dynamic_out, dynamic_hidden = self.dynamic_encoder(dynamic_graph_emb)
+        # pred = torch.cat([dynamic_hidden[-1], dynamic_hidden[-2]], dim=1)
+        # pred = self.pred_mlp(pred)
+        # pred_pm25 = pred.view(batch_size, -1, 1)
         pred_pm25 = torch.stack(pred_pm25, dim=1)
         return pred_pm25

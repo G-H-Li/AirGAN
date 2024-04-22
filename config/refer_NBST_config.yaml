@@ -5,7 +5,7 @@ general_hyper_params:
   epochs: 50
   exp_times: 3
   weight_decay: 0.00001
-  lr: 0.0001
+  lr: 0.001
   is_early_stop: True
   early_stop: 5
 # model hyperparameters setting

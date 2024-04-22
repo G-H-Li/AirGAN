@@ -92,6 +92,9 @@ class ReferenceBaseTrainer:
     def _get_scheduler(self):
         raise NotImplementedError('Needs implementation by child class.')
 
+    def _get_model(self):
+        raise NotImplementedError('Needs implementation by child class.')
+
     def _train(self, train_loader):
         """
         Train model
@@ -129,21 +132,31 @@ class ReferenceBaseTrainer:
             if not os.path.exists(exp_dir):
                 os.makedirs(exp_dir)
             if exp > 0:
-                last_exp_filepath = os.path.join(self.record_dir, f'exp_{exp - 1}',
-                                                 f'model_{self.config.model_name}.pth')
-                self.model.load_state_dict(torch.load(last_exp_filepath))
+                self.model = self._get_model().to(self.device)
+                self.optimizer = self._get_optimizer()
+            #     last_exp_filepath = os.path.join(self.record_dir, f'exp_{exp - 1}',
+            #                                      f'model_{self.config.model_name}.pth')
+            #     self.model.load_state_dict(torch.load(last_exp_filepath))
             # create data loader
             if self.config.dataset_name == 'UrbanAir':
                 if self.config.model_name == 'NBST':
-                    train_dataset = NBSTParser(config=self.config, node_ids=train_ids, mode='train')
-                    test_dataset = NBSTParser(config=self.config, node_ids=test_ids, mode='valid')
+                    valid_local_nodes_ids = test_ids[:int(len(test_ids) * 0.5)]
+                    train_local_nodes_ids = test_ids[int(len(test_ids) * 0.5):]
+                    train_dataset = NBSTParser(config=self.config, station_node_ids=train_ids,
+                                               local_nodes_ids=train_local_nodes_ids, mode='train')
+                    test_dataset = NBSTParser(config=self.config, station_node_ids=train_ids,
+                                              local_nodes_ids=valid_local_nodes_ids, mode='valid')
                     self.pm25_scaler = test_dataset.pm25_scaler
                     self.pm25_std = test_dataset.pm25_std
                     self.pm25_mean = test_dataset.pm25_mean
                     self.criterion = self._get_criterion()
                 elif self.config.model_name in ['ADAIN', 'MCAM', 'ASTGC']:
-                    train_dataset = ReferParser(config=self.config, node_ids=train_ids, mode='train')
-                    test_dataset = ReferParser(config=self.config, node_ids=test_ids, mode='valid')
+                    valid_local_nodes_ids = test_ids[:int(len(test_ids) * 0.5)]
+                    train_local_nodes_ids = test_ids[int(len(test_ids) * 0.5):]
+                    train_dataset = ReferParser(config=self.config, station_node_ids=train_ids,
+                                                local_nodes_ids=train_local_nodes_ids, mode='train')
+                    test_dataset = ReferParser(config=self.config, station_node_ids=train_ids,
+                                               local_nodes_ids=valid_local_nodes_ids, mode='valid')
                     self.pm25_scaler = test_dataset.pm25_scaler
                 else:
                     self.logger.error("Unsupported model type")
@@ -355,15 +368,14 @@ class MLBaseTrainer:
             if not os.path.exists(exp_dir):
                 os.makedirs(exp_dir)
             if self.config.dataset_name == 'UrbanAir':
-                train_dataset = ReferenceMLParser(config=self.config, node_ids=train_ids, mode='train')
-                test_dataset = ReferenceMLParser(config=self.config, node_ids=test_ids, mode='valid')
-                self.pm25_scaler = test_dataset.pm25_scaler
+                dataset = ReferenceMLParser(config=self.config, station_node_ids=train_ids, local_node_ids=test_ids)
+                self.pm25_scaler = dataset.pm25_scaler
             else:
                 self.logger.error("Unsupported dataset type")
                 raise ValueError('Unknown dataset')
 
-            train_input, train_target = train_dataset.get_data()
-            test_input, test_target = test_dataset.get_data()
+            train_input, train_target = dataset.get_data(mode='train')
+            test_input, test_target = dataset.get_data(mode='valid')
             train_input_splices = np.split(train_input, 12, axis=0)
             train_target_splices = np.split(train_target, 12, axis=0)
             test_input_splices = np.split(test_input, 12, axis=0)
