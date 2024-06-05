@@ -262,3 +262,66 @@ class SimTrainer(ForecastBaseTrainer):
                              f'{self.config.model_name}_predict_{test_hist_len}_{test_pred_len}.npy'), predict_epoch)
         np.save(os.path.join(self.record_dir,
                              f'{self.config.model_name}_label_{test_hist_len}_{test_pred_len}.npy'), label_epoch)
+
+    def run_one_test(self, model_path: str, test_hist_len: int, test_pred_len: int):
+        try:
+            shutil.copy(model_path, os.path.join(self.record_dir, f'model_{self.config.model_name}.pth'))
+            self.logger.debug('model file copied')
+        except IOError as e:
+            self.logger.error(f'Error copying config file: {e}')
+        # prepare dataset
+        config = self.config
+        config.hist_len = test_hist_len
+        config.pred_len = test_pred_len
+        dataset = SimParser(config, mode='test')
+        state_dict = torch.load(model_path)
+        self.model.load_state_dict(state_dict, strict=True)
+        self.model.batch_size = 1
+        if test_hist_len != self.model.hist_len:
+            raise ValueError('test history_seq_len does not match the model history_seq_len')
+        pred_count = test_pred_len // self.model.pred_len
+        remainder = test_pred_len % self.model.pred_len
+        pred_count = pred_count if remainder == 0 else pred_count + 1
+        all_len = self.model.pred_len + self.model.hist_len
+        self.model.eval()
+        predict_list = []
+        label_list = []
+        self.logger.info("Start Test:")
+        start_time = time()
+        with torch.no_grad():
+            pred = []
+            pm25, feature, locs, emb_feature, in_out_weight = dataset[0]
+            pm25 = torch.from_numpy(pm25).to(self.device).unsqueeze(0)
+            pm25_label = pm25[:, test_hist_len:]
+            pm25_hist = pm25[:, :test_hist_len]
+            feature = torch.from_numpy(feature).to(self.device).unsqueeze(0)
+            in_out_weight = torch.from_numpy(in_out_weight).to(self.device).unsqueeze(0)
+            emb_feature = torch.from_numpy(emb_feature).int().to(self.device).unsqueeze(0)
+            locs = torch.from_numpy(locs).to(self.device).unsqueeze(0)
+            for i in range(pred_count):
+                features = feature[:, :, i*test_hist_len:i*test_hist_len+all_len]
+                emb_features = emb_feature[:, i * test_hist_len:i * test_hist_len + all_len]
+                in_out_weights = in_out_weight[:, i * test_hist_len:i * test_hist_len + all_len]
+                pm25_pred = self.model(pm25_hist, features, locs, emb_features, in_out_weights)
+                pred.append(pm25_pred)
+                pm25_hist = torch.cat([pm25_hist, pm25_pred], dim=1)[:, -test_hist_len:]
+
+            if remainder != 0:
+                pm25_pred = torch.cat(pred, dim=1)[:, :remainder-self.model.pred_len]
+            else:
+                pm25_pred = torch.cat(pred, dim=1)
+            pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
+            pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())
+            predict_list.append(pm25_pred_val)
+            label_list.append(pm25_label_val)
+
+        end_time = time()
+
+        self.logger.info(f'Test end. Time taken: {end_time - start_time} s')
+        predict_epoch = np.concatenate(predict_list, axis=0)
+        label_epoch = np.concatenate(label_list, axis=0)
+        predict_epoch[predict_epoch < 0] = 0
+        np.save(os.path.join(self.record_dir,
+                             f'{self.config.model_name}_predict_{test_hist_len}_{test_pred_len}.npy'), predict_epoch)
+        np.save(os.path.join(self.record_dir,
+                             f'{self.config.model_name}_label_{test_hist_len}_{test_pred_len}.npy'), label_epoch)

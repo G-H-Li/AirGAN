@@ -256,5 +256,8 @@ class SimParser(data.Dataset):
 
 
 if __name__ == '__main__':
-    know_air = SimParser(Config())
-    know_air.__getitem__(1)
+    a = KnowAirDataset(Config(), mode='test')
+    know_air = SimParser(Config(), mode='test')
+    b = know_air.__getitem__(0)
+    c = a.__getitem__(0)
+    print(b)

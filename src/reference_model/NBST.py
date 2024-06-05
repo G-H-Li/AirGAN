@@ -128,15 +128,9 @@ class ConvLSTM(nn.Module):
         self.kernel_size = kernel_size
         self.dropout = dropout
 
-        # self.conv = nn.Sequential(nn.Conv1d(input_size, hidden_size, kernel_size, padding=kernel_size // 2),
-        #                           nn.ReLU())
-        # self.lstm = nn.LSTM(hidden_size, hidden_size, batch_first=True, dropout=dropout, num_layers=lstm_layers)
-
-        # 消融实验1：ConvLSTM - LSTM
         self.lstm = nn.LSTM(input_size, hidden_size, batch_first=True, dropout=dropout, num_layers=lstm_layers)
 
     def forward(self, x):
-        # x = self.conv(x.permute(0, 2, 1)).permute(0, 2, 1)  消融实验1：ConvLSTM - LSTM
         x, (h, _) = self.lstm(x)
         return x, h[-1]
 
@@ -158,7 +152,6 @@ class NBST(nn.Module):
 
         self.sigma_h = nn.Parameter(torch.randn(1, device=self.device, requires_grad=True))
 
-        # self.pm25_emb = nn.Embedding(6, self.emb_dim)
         self.weather_emb = nn.Embedding(17, self.emb_dim)
         self.wind_direc_emb = nn.Embedding(9, self.emb_dim)
         self.month_emb = nn.Embedding(12, self.emb_dim)
@@ -170,12 +163,9 @@ class NBST(nn.Module):
                                         Dropout(self.dropout),
                                         Linear(self.hidden_dim * 2, self.hidden_dim),
                                         SiLU())  #
-        # self.static_attention = nn.Sequential(nn.Linear(self.hidden_dim, self.hidden_dim),
-        #                                       nn.ReLU(),
-        #                                       nn.Linear(self.hidden_dim, self.hidden_dim),
-        #                                       nn.Softmax(dim=-1))
+
         self.static_attention = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
-                                                for _ in range(self.attn_layer)])
+                                               for _ in range(self.attn_layer)])
         self.static_attn_layer = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
                                                 for _ in range(self.attn_layer)])
         self.static_attn_fusion = nn.Sequential(Linear(self.hidden_dim * self.attn_layer, 2 * self.hidden_dim),
@@ -184,20 +174,13 @@ class NBST(nn.Module):
                                                 Linear(2 * self.hidden_dim, self.hidden_dim),
                                                 ReLU())
 
-        # self.dynamic_station_lstm = ConvLSTM(self.in_dim + 5 * self.emb_dim, self.hidden_dim,
-        #                                      3, self.gru_layer, self.dropout)
         self.dynamic_local_lstm = ConvLSTM(self.in_dim - 1 + 5 * self.emb_dim, self.hidden_dim,
                                            3, self.gru_layer, self.dropout)
 
         self.dynamic_pm25_lstm = ConvLSTM(1, self.hidden_dim, 3, self.gru_layer, self.dropout)
 
-        # self.dynamic_attention = nn.Sequential(nn.Linear(2 * self.hidden_dim, self.hidden_dim),
-        #                                        nn.ReLU(),
-        #                                        nn.Linear(self.hidden_dim, self.hidden_dim),
-        #                                        nn.Softmax(dim=-1))
         self.dynamic_attention = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
                                                 for _ in range(self.attn_layer)])
-
         self.dynamic_attn_layer = nn.ModuleList([StaticAttention(self.head_num, self.hidden_dim, self.dropout)
                                                  for _ in range(self.attn_layer)])
         self.dynamic_attn_fusion = nn.Sequential(Linear(self.hidden_dim * self.attn_layer, 2 * self.hidden_dim),
@@ -250,10 +233,14 @@ class NBST(nn.Module):
         station_nodes_emb = self.static_mlp(station_nodes)
         local_node_emb = self.static_mlp(local_node)
 
+        # 消融实验1：不使用编码器
         for s_layer, d_layer in zip(self.static_attention, self.dynamic_attention):
             static_fusion = s_layer(station_pm25_emb, station_nodes_emb, station_nodes_emb)
             dynamic_weight = d_layer(station_pm25_emb, station_dynamic_emb, station_dynamic_emb)
+        # static_fusion = station_nodes_emb  # 消融实验1：不使用编码器
+        # dynamic_weight = station_dynamic_emb  # 消融实验1：不使用编码器
 
+        # 消融实验2： 不使用解码器
         static_output = []
         dynamic_output = []
         static_kv = local_node_emb
@@ -266,20 +253,14 @@ class NBST(nn.Module):
             dynamic_output.append(dynamic_out.squeeze(1))
             static_output.append(static_out.squeeze(1))
         static_out = torch.cat(static_output, dim=-1)
-        static_output = self.static_attn_fusion(static_out)
+        static_out = self.static_attn_fusion(static_out)
         dynamic_out = torch.cat(dynamic_output, dim=-1)
         dynamic_out = self.dynamic_attn_fusion(dynamic_out)
+        # static_out = local_node_emb.squeeze(1)  # 消融实验2： 不使用解码器
+        # dynamic_out = local_dynamic_h  # 消融实验2： 不使用解码器
 
-        # preds = []
-        # # h0 = self.sigma_h * torch.ones((batch_size, 1), device=self.device)
-        # # h0 = self.sigma_h * (station_pm25[:, 0, :, 0].mean(dim=1)).view(batch_size, 1)
-        # for i in range(seq_len):
-        #     pred_in = torch.cat((static_output, dynamic_out, h0), dim=-1)
-        #     pred_out = self.pred_infer_mlp(pred_in)
-        #     preds.append(pred_out)
-        #     h0 = pred_out
-        # pred_out = torch.stack(preds, dim=1)
-        pred_in = torch.cat((static_output, dynamic_out), dim=-1)
+        pred_in = torch.cat((static_out, dynamic_out), dim=-1)
+        # pred_in = dynamic_out  # 消融实验3：不使用静态信息 消融实验4：不使用动态信息
         pred_out = self.pred_infer_mlp(pred_in)
         pred = pred_out.view(batch_size, seq_len, -1)
 

@@ -1,15 +1,18 @@
+import os
+
 import numpy as np
 import torch
 from torch import nn
 from tqdm import tqdm
 
+from src.dataset.reference_parser import NBSTParser
 from src.reference_model.NBST import NBST
 from src.trainer.reference_base_trainer import ReferenceBaseTrainer
 
 
 class NBSTTrainer(ReferenceBaseTrainer):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, mode='train'):
+        super().__init__(mode=mode)
         self.model = self._get_model()
         self.model = self.model.to(self.device)
         self.optimizer = self._get_optimizer()
@@ -111,3 +114,44 @@ class NBSTTrainer(ReferenceBaseTrainer):
         label_epoch = np.concatenate(label_list, axis=0)
         predict_epoch[predict_epoch < 0] = 0
         return test_loss, predict_epoch, label_epoch
+
+    def run_test(self, model_path: str, idx: int):
+        x = list(range(30))
+        x.remove(3)
+        dataset = NBSTParser(self.config, x, [3], mode='valid')
+        self.pm25_scaler = dataset.pm25_scaler
+
+        state_dict = torch.load(model_path)
+        self.model.load_state_dict(state_dict, strict=True)
+        self.model.batch_size = 1
+
+        local_pm25, station_dist, local_node, local_features, local_emb, station_nodes, station_features, station_emb = dataset[idx]
+
+        self.model.eval()
+        predict_list = []
+        label_list = []
+
+        with torch.no_grad():
+            local_node = torch.from_numpy(local_node).float().to(self.device).unsqueeze(0)
+            local_features = torch.from_numpy(local_features).float().to(self.device).unsqueeze(0)
+            local_emb = torch.from_numpy(local_emb).to(self.device).unsqueeze(0)
+            station_nodes = torch.from_numpy(station_nodes).float().to(self.device).unsqueeze(0)
+            station_emb = torch.from_numpy(station_emb).to(self.device).unsqueeze(0)
+            station_features = torch.from_numpy(station_features).float().to(self.device).unsqueeze(0)
+            station_dist = torch.from_numpy(station_dist).float().to(self.device).unsqueeze(0)
+
+            pm25_pred = self.model(station_dist, local_node, local_features,
+                                   local_emb, station_nodes, station_features, station_emb)
+
+            pm25_pred_val = self.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
+            pm25_label_val = self.pm25_scaler.denormalize(local_pm25)
+            predict_list.append(pm25_pred_val)
+            label_list.append(pm25_label_val)
+
+        predict_epoch = np.concatenate(predict_list, axis=0)
+        label_epoch = np.concatenate(label_list, axis=0)
+        predict_epoch[predict_epoch < 0] = 0
+        np.save(os.path.join(self.record_dir,
+                             f'{self.config.model_name}_predict_{idx}.npy'), predict_epoch)
+        np.save(os.path.join(self.record_dir,
+                             f'{self.config.model_name}_label_{idx}.npy'), label_epoch)

@@ -2,6 +2,7 @@ import os
 import shutil
 
 import arrow
+import joblib
 import numpy as np
 import torch
 from joblib import dump
@@ -367,6 +368,8 @@ class MLBaseTrainer:
             exp_dir = os.path.join(self.record_dir, f'exp_{exp}')
             if not os.path.exists(exp_dir):
                 os.makedirs(exp_dir)
+            if exp > 0:
+                self.model = self._get_model()
             if self.config.dataset_name == 'UrbanAir':
                 dataset = ReferenceMLParser(config=self.config, station_node_ids=train_ids, local_node_ids=test_ids)
                 self.pm25_scaler = dataset.pm25_scaler

@@ -330,7 +330,8 @@ class ReferenceMLParser:
             label.append(local_features[:, :, i, 0])
             nodes = np.tile(station_nodes.reshape(1, 1, station_num, -1),
                             (station_features.shape[0], self.time_len, 1, 1))
-            features.append(np.concatenate([station_features, nodes], axis=-1))
+            local_f = np.tile(local_features[:, :, [i], 1:], (1, 1, station_num, 1))
+            features.append(np.concatenate([station_features, nodes, local_f], axis=-1))
         features = np.concatenate(features, axis=0)
         label = np.concatenate(label, axis=0)
         return features, label
@@ -346,6 +347,10 @@ if __name__ == '__main__':
     config = ReferConfig(config_filename='refer_base_config.yaml')
     config.model_name = 'ASTGC'
     # a = ReferenceMLParser(config, [2, 5, 6, 8, 10, 11], [1, 3, 4])
-    parser = ReferParser(config, [2, 5, 6, 8, 10, 11], [1, 3, 4], mode='train')
-    # a = parser.__getitem__(1)
-    print(a)
+    x = list(range(30))
+    x.remove(3)
+    parser = ReferParser(config, x, [3], mode='train')
+    print(parser.pm25_label[1080])
+    print(parser.pm25_label[1104])
+    print(parser.pm25_label[1128])
+    print(parser.pm25_label[1152])

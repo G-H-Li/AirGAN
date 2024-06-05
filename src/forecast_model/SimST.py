@@ -34,6 +34,8 @@ class SimST(nn.Module):
                                      Dropout(self.dropout),
                                      Linear(self.hidden_dim // 2, self.hidden_dim),
                                      Tanh())
+        self.static_encoder = GRU(1 + self.hidden_dim, self.hidden_dim,
+                                   self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
 
         self.dynamic_mlp = Sequential(Linear(2 + 3 * self.date_emb + self.loc_emb, self.hidden_dim // 2),
                                       Tanh(),
@@ -45,9 +47,6 @@ class SimST(nn.Module):
 
         self.pred_mlp = Sequential(Linear(2 * self.hidden_dim, 1),
                                    Tanh())
-        # else:
-        #     self.pred_mlp = Sequential(Linear(self.loc_emb + 3*self.date_emb + self.hidden_dim, 1),
-        #                                Tanh())
 
     def forward(self, pm25_hist, features, city_locs, date_emb, in_out_weight):
         # PM25: Batch_size, hist_len, 1
@@ -70,13 +69,14 @@ class SimST(nn.Module):
         all_hour_emb = self.emb_hour(date_emb[:, :, 0])
         city_loc_emb = self.loc_mlp(city_locs.float())
         for i in range(pred_len):
-            static_graph_emb = self.static_mlp(features[:, :hist_len + i])
+            static_graph_emb = self.static_mlp(features[:, :hist_len + i])  # 消融实验3，去除时序特征
             static_graph_emb = torch.cat((static_graph_emb, xn[:, :hist_len + i]), dim=-1)
             dynamic_graph_emb = torch.cat([city_loc_emb.view(batch_size, 1, -1).repeat(1, i+hist_len, 1),
                                            in_out_weight[:, :hist_len + i],   # 消融实验1，去除动态传播特征
                                            all_month_emb[:, :hist_len + i],
                                            all_weekday_emb[:, :hist_len + i],
-                                           all_hour_emb[:, :hist_len + i]], dim=-1)
+                                           all_hour_emb[:, :hist_len + i]
+                                           ], dim=-1)
             dynamic_graph_emb = self.dynamic_mlp(dynamic_graph_emb)
             dynamic_graph_emb = torch.cat((dynamic_graph_emb, static_graph_emb), dim=-1)
             dynamic_out, dynamic_hidden = self.dynamic_encoder(dynamic_graph_emb)
