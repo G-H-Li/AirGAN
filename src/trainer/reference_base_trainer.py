@@ -1,4 +1,5 @@
 import os
+import random
 import shutil
 
 import arrow
@@ -67,7 +68,14 @@ class ReferenceBaseTrainer:
 
     def _set_seed(self):
         if self.config.seed != 0:
-            torch.manual_seed(self.config.seed)
+            seed = self.config.seed
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+            torch.backends.cudnn.benchmark = False
+            torch.backends.cudnn.deterministic = True
         self.logger.debug(f'Set seed: {torch.seed()}')
 
     def _choose_device(self):

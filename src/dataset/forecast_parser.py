@@ -132,18 +132,27 @@ class SimParser(data.Dataset):
         self.node_attr = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_node_attr.npy'))
         self.feature = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_feature.npy'))
         self.pm25 = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_pm25.npy'))
+
         self.adj_weighted = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_weighted_adj.npy'))
         self.node_num = self.adj_weighted.shape[0]
         self._process_time(config, mode)
         self._process_feature(config)
+
         seq_len = config.hist_len + config.pred_len
+        # pm25_city_median = np.mean(self.pm25, axis=0)
+        # self.pm25_class = np.where(self.pm25 > pm25_city_median, 1, 0)
+        # self.pm25_class = self.get_pm25_class()
+        self.pm25_diff = self.get_pm25_diff()
         self._add_time_dim(seq_len)
         self._calc_mean_std()
         # data preprocess
         self.pm25_scaler = StandardScaler(mean=self.pm25_mean, std=self.pm25_std)
         self.feature_scaler = StandardScaler(mean=self.feature_mean, std=self.feature_std)
         self.loc_scaler = StandardScaler(mean=self.loc_mean, std=self.loc_std)
+        self.pm25_diff_scaler = StandardScaler(mean=self.pm25_diff_mean, std=self.pm25_diff_std)
+
         self.pm25 = self.pm25_scaler.normalize(self.pm25)
+        self.pm25_diff = self.pm25_diff_scaler.normalize(self.pm25_diff)
         self.feature = self.feature_scaler.normalize(self.feature)
         self.loc = self.loc_scaler.normalize(self.nodes)
 
@@ -157,8 +166,9 @@ class SimParser(data.Dataset):
 
         self.embedding_feature = [self.embedding_feature for _ in range(self.node_num)]
         self.embedding_feature = np.stack(self.embedding_feature, axis=1)
-        self.embedding_feature = self.embedding_feature.reshape((-1, seq_len, self.embedding_feature.shape[-1]))
+        self.embedding_feature = self.embedding_feature.reshape((self.locs.shape[0], seq_len, -1))
 
+        self.pm25 = np.concatenate([self.pm25, self.pm25_diff], axis=-1)
         self.pm25 = np.transpose(self.pm25, axes=(0, 2, 1, 3)).reshape((-1, seq_len, self.pm25.shape[-1]))
         self.feature = np.transpose(self.feature, axes=(0, 2, 1, 3)).reshape((-1, seq_len, self.feature.shape[-1]))
 
@@ -196,7 +206,7 @@ class SimParser(data.Dataset):
                 arr_ts.append(arr_t)
             arr_ts = np.stack(arr_ts, axis=0)
             return arr_ts
-
+        self.pm25_diff = _add_t(self.pm25_diff, seq_len)
         self.pm25 = _add_t(self.pm25, seq_len)
         self.feature = _add_t(self.feature, seq_len)
         self.embedding_feature = _add_t(self.embedding_feature, seq_len)
@@ -210,6 +220,27 @@ class SimParser(data.Dataset):
         self.pm25_std = self.pm25.std()
         self.loc_mean = self.nodes.mean(axis=0)
         self.loc_std = self.nodes.std(axis=0)
+
+        self.pm25_diff_mean = self.pm25_diff.mean()
+        self.pm25_diff_std = self.pm25_diff.std()
+
+    def get_pm25_class(self, diff_threshold=25.0, pm25_threshold=75.0):
+        data = self.pm25.squeeze(-1).transpose(1, 0)
+        diff = np.diff(data)
+
+        # 检测大于阈值的差分
+        sub_points = np.where(np.abs(diff) > diff_threshold, 1, 0)
+        large_points = np.where(data[:, 1:] > pm25_threshold, 1, 0)
+        points = sub_points & large_points
+        points = np.concatenate([np.zeros((data.shape[0], 1)), points], axis=1)
+
+        return points.transpose(1, 0)[..., np.newaxis]
+
+    def get_pm25_diff(self):
+        data = self.pm25.squeeze(-1).transpose(1, 0)
+        diff = np.diff(data)
+        diff = np.concatenate([np.zeros((data.shape[0], 1)), diff], axis=1)
+        return diff.transpose(1, 0)[..., np.newaxis]
 
     def __len__(self):
         return len(self.pm25)

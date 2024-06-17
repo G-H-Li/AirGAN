@@ -10,7 +10,7 @@ from torchinfo import summary
 from tqdm import tqdm
 
 from src.dataset.forecast_parser import SimParser
-from src.forecast_model.SimST import SimST
+from src.forecast_model.SimST import SimST, MultiLoss
 from src.trainer.forecast_base_trainer import ForecastBaseTrainer
 
 
@@ -173,8 +173,8 @@ class SimTrainer(ForecastBaseTrainer):
             test_loss += loss.item()
             cost_time += ((end_time - start_time) / self.config.batch_size)
 
-            pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred.cpu().detach().numpy())
-            pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label.cpu().detach().numpy())
+            pm25_pred_val = self.test_dataset.pm25_scaler.denormalize(pm25_pred[..., [0]].cpu().detach().numpy())
+            pm25_label_val = self.test_dataset.pm25_scaler.denormalize(pm25_label[..., [0]].cpu().detach().numpy())
             predict_list.append(pm25_pred_val)
             label_list.append(pm25_label_val)
 
@@ -192,7 +192,8 @@ class SimTrainer(ForecastBaseTrainer):
         :return:
         """
         # return nn.MSELoss()
-        return nn.L1Loss()
+        # return nn.L1Loss()
+        return MultiLoss()
 
     def _get_optimizer(self):
         return torch.optim.Adam(self.model.parameters(),
