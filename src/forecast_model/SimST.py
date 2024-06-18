@@ -1,7 +1,7 @@
 import torch
 from pytorch_tcn import TCN
 from torch import nn
-from torch.nn import Sequential, Linear, GRU, Tanh, Dropout, GRUCell, Tanh, Sigmoid
+from torch.nn import Sequential, Linear, GRU, Dropout, Tanh
 
 
 class MultiLoss(nn.Module):
@@ -23,20 +23,6 @@ class MultiLoss(nn.Module):
         w1 = 1
         loss_val = (w1 * normal_loss_fn(pred_val, target_val) + alpha * class_loss_fn(pred_class, target_class))
         return loss_val
-
-
-class GaussianLocEmb(nn.Module):
-    def __init__(self, sigma, hidden_dim):
-        super(GaussianLocEmb, self).__init__()
-        self.sigma = sigma
-        self.hidden_dim = hidden_dim
-        self.loc_emb = Linear(1, hidden_dim)
-
-    def forward(self, x, y):
-        coefficient = 1 / (2 * torch.pi * self.sigma ** 2)
-        exponent = - (x ** 2 + y ** 2) / (2 * self.sigma ** 2)
-        gaussian = coefficient * torch.exp(exponent)
-        return self.loc_emb(gaussian)
 
 
 class SimST(nn.Module):
@@ -64,18 +50,17 @@ class SimST(nn.Module):
 
         self.loc_mlp = Sequential(Linear(2, self.loc_emb),
                                   Tanh())
-        # self.loc_mlp = GaussianLocEmb(0.5, self.loc_emb)
 
-        self.static_mlp = Sequential(Linear(self.in_dim * 2, self.hidden_dim // 2),
+        self.static_mlp = Sequential(Linear(self.in_dim * 2, self.hidden_dim),
                                      Tanh(),
                                      Dropout(self.dropout),
-                                     Linear(self.hidden_dim // 2, self.hidden_dim),
+                                     Linear(self.hidden_dim, self.hidden_dim),
                                      Tanh())
 
-        self.dynamic_mlp = Sequential(Linear(2 + 3 * self.date_emb + self.loc_emb, self.hidden_dim // 2),
+        self.dynamic_mlp = Sequential(Linear(2 + 3 * self.date_emb + self.loc_emb, self.hidden_dim),
                                       Tanh(),
                                       Dropout(self.dropout),
-                                      Linear(self.hidden_dim // 2, self.hidden_dim),
+                                      Linear(self.hidden_dim, self.hidden_dim),
                                       Tanh())
         self.dynamic_encoder = GRU(1 + 2 * self.hidden_dim, self.hidden_dim,
                                    self.gru_layer, dropout=self.dropout, batch_first=True, bidirectional=True)
@@ -110,7 +95,7 @@ class SimST(nn.Module):
         city_loc_emb = self.loc_mlp(city_locs)
         for i in range(pred_len):
             static_graph_emb = self.static_mlp(features[:, :hist_len + i])  # 消融实验3，去除时序特征
-            dynamic_graph_emb = torch.cat([city_loc_emb.view(batch_size, 1, -1).repeat(1, i + hist_len, 1),
+            dynamic_graph_emb = torch.cat([city_loc_emb.reshape(batch_size, 1, -1).repeat(1, i + hist_len, 1),
                                            in_out_weight[:, :hist_len + i],  # 消融实验1，去除动态传播特征
                                            all_month_emb[:, :hist_len + i],
                                            all_weekday_emb[:, :hist_len + i],
