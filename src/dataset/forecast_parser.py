@@ -45,6 +45,7 @@ class KnowAirDataset(data.Dataset):
     """
     Preprocess for KnowAir dataset
     """
+
     def __init__(self, config: Config, mode='train'):
         if mode not in ['train', 'valid', 'test']:
             raise ValueError(f'Invalid mode: {mode}')
@@ -135,6 +136,7 @@ class SimParser(data.Dataset):
 
         self.adj_weighted = np.load(os.path.join(config.dataset_dir, f'{config.dataset_name}_weighted_adj.npy'))
         self.node_num = self.adj_weighted.shape[0]
+        self.K = config.K
         self._process_time(config, mode)
         self._process_feature(config)
 
@@ -206,6 +208,7 @@ class SimParser(data.Dataset):
                 arr_ts.append(arr_t)
             arr_ts = np.stack(arr_ts, axis=0)
             return arr_ts
+
         self.pm25_diff = _add_t(self.pm25_diff, seq_len)
         self.pm25 = _add_t(self.pm25, seq_len)
         self.feature = _add_t(self.feature, seq_len)
@@ -250,12 +253,12 @@ class SimParser(data.Dataset):
         batch = index // self.node_num
         one_hop_loc = self.adj_weighted[loc_idx].squeeze()
         one_hop_loc = np.nonzero(one_hop_loc)[0]
-        feature_batch = self.feature[batch*self.node_num:(batch+1)*self.node_num, :]
+        feature_batch = self.feature[batch * self.node_num:(batch + 1) * self.node_num, :]
         feature_one_hop_loc = feature_batch[one_hop_loc]
         # cal static feature
         feature_self = self.feature[index].reshape(1, feature_one_hop_loc.shape[1], -1)
-        feature_aug = feature_batch[one_hop_loc].mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
-        static_feature = np.concatenate((feature_self, feature_aug), axis=0)
+        # feature_aug = feature_one_hop_loc.mean(axis=0).reshape(1, feature_one_hop_loc.shape[1], -1)
+        # static_feature = np.concatenate((feature_self, feature_aug), axis=0)
         # cal dynamic feature
         # first self -> one-hop
         out_node_attr = self.node_attr[loc_idx][:, one_hop_loc]
@@ -268,8 +271,17 @@ class SimParser(data.Dataset):
         out_tar_dir = out_node_attr[:, :, 1]
         theta = np.abs(out_tar_dir - out_src_wind_dir)
         out_weight = np_relu(np.tanh(3 * out_src_wind_speed * np.cos(theta) / out_tar_dist))
-        out_weight = np.mean(out_weight, axis=-1).reshape((-1, 1))
-        out_weight = -out_weight
+        # 获取前K个最大的元素及索引
+        out_max_k_index = np.argsort(out_weight, axis=-1)[:, -self.K:]
+        out_weight_k = out_weight[np.arange(out_weight.shape[0])[:, None], out_max_k_index, None].transpose(1, 0, 2)
+        indices = out_max_k_index.transpose(1, 0)
+        out_features_k = feature_one_hop_loc[indices,
+                         np.tile(np.arange(indices.shape[1]), (indices.shape[0], 1)), :]
+        out_node_features = -out_weight_k * out_features_k
+
+        out_weight_mean = np.mean(out_weight, axis=-1).reshape((-1, 1))
+        out_weight_mean = -out_weight_mean
+
         # second one-hop -> self
         in_node_attr = np.transpose(self.node_attr, (1, 0, 2))[loc_idx][:, one_hop_loc]
         in_src_nodes = feature_one_hop_loc.transpose((1, 0, 2))
@@ -281,14 +293,24 @@ class SimParser(data.Dataset):
         in_tar_dir = in_node_attr[:, :, 1]
         theta = np.abs(in_tar_dir - in_src_wind_dir)
         in_weight = np_relu(np.tanh(3 * in_src_wind_speed * np.cos(theta) / in_tar_dist))
-        in_weight = np.mean(in_weight, axis=-1).reshape((-1, 1))
-        in_out_weight = np.concatenate((in_weight, out_weight), axis=-1)
-        return self.pm25[index], static_feature, self.locs[index], self.embedding_feature[index], in_out_weight
+
+        in_weight_mean = np.mean(in_weight, axis=-1).reshape((-1, 1))
+
+        in_out_weight = np.concatenate((in_weight_mean, out_weight_mean), axis=-1)
+        # 获取前K个最大的元素及索引
+        in_max_k_index = np.argsort(in_weight, axis=-1)[:, -self.K:]
+        in_weight_k = in_weight[np.arange(in_weight.shape[0])[:, None], in_max_k_index, None].transpose(1, 0, 2)
+        indices = in_max_k_index.transpose(1, 0)
+        in_features_k = feature_one_hop_loc[indices,
+                         np.tile(np.arange(indices.shape[1]), (indices.shape[0], 1)), :]
+        in_node_features = in_weight_k * in_features_k
+        dynamic_features = np.concatenate((in_node_features, feature_self, out_node_features), axis=0)
+        return self.pm25[index], dynamic_features, self.locs[index], self.embedding_feature[index], in_out_weight
 
 
 if __name__ == '__main__':
-    a = KnowAirDataset(Config(), mode='test')
+    # a = KnowAirDataset(Config(), mode='test')
     know_air = SimParser(Config(), mode='test')
     b = know_air.__getitem__(0)
-    c = a.__getitem__(0)
+    # c = a.__getitem__(0)
     print(b)

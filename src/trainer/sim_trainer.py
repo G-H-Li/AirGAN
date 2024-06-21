@@ -4,7 +4,6 @@ from time import time
 
 import numpy as np
 import torch
-from torch import nn
 from torch.utils.data import DataLoader
 from torchinfo import summary
 from tqdm import tqdm
@@ -56,8 +55,7 @@ class SimTrainer(ForecastBaseTrainer):
                          self.config.dropout,
                          self.config.gru_layers,
                          self.config.use_dynamic,
-                         self.train_dataset.pm25_mean,
-                         self.train_dataset.pm25_std)
+                         self.config.K)
         else:
             self.logger.error('Unsupported model name')
             raise NotImplementedError

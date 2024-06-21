@@ -124,6 +124,7 @@ class Config(object):
             self.clip = config['clip']
             self.gru_layers = config['gru_layers']
             self.use_dynamic = config['use_dynamic']
+            self.K = config['K']
 
     def _read_data_info_config(self):
         """

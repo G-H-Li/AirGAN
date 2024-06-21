@@ -22,3 +22,4 @@ model_hyper_params:
     clip: 5
     gru_layers: 2
     use_dynamic: True
+    K: 3
