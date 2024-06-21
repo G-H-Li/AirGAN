@@ -1,7 +1,7 @@
 import torch
 from pytorch_tcn import TCN
 from torch import nn, Tensor
-from torch.nn import Sequential, Linear, GRU, Dropout, Tanh, Conv2d, ReLU, Conv1d
+from torch.nn import Sequential, Linear, GRU, Dropout, Tanh, Conv2d, ReLU, Conv1d, ModuleList
 from torch.nn.utils.parametrizations import weight_norm
 
 
@@ -26,16 +26,17 @@ class MultiLoss(nn.Module):
         return loss_val
 
 
-class TCN2D(nn.Module):
-    def __init__(self, in_dim, hidden_dim, K, dropout):
-        super(TCN2D, self).__init__()
-        self.conv1 = weight_norm(Conv2d(in_dim, hidden_dim, (2 * K + 1, 1), padding=(K, 0)))
+class TCN2DBlock(nn.Module):
+    def __init__(self, in_dim, hidden_dim, kernel_size, padding, dilation, dropout):
+        super(TCN2DBlock, self).__init__()
+        self.conv1 = weight_norm(Conv2d(in_dim, hidden_dim, (kernel_size, 1),
+                                        padding=(padding, 0), dilation=(dilation, 1)))
         self.relu1 = ReLU()
         self.dropout1 = Dropout(dropout)
-        self.conv2 = weight_norm(Conv2d(hidden_dim, hidden_dim, (2 * K + 1, 1)))
+        self.conv2 = weight_norm(Conv2d(hidden_dim, hidden_dim, (kernel_size, 1),
+                                        padding=(padding, 0), dilation=(dilation, 1)))
         self.relu2 = ReLU()
         self.dropout2 = Dropout(dropout)
-        self.conv3 = Conv1d(hidden_dim, hidden_dim, 1)
 
     def forward(self, x):
         x = x.permute(0, 3, 2, 1)
@@ -45,10 +46,30 @@ class TCN2D(nn.Module):
         x = self.conv2(x)
         x = self.relu2(x)
         x = self.dropout2(x)
-        x = x.squeeze(2)
-        x = self.conv3(x)
-        x = x.transpose(1, 2)
+        x = x.permute(0, 3, 2, 1)
         return x
+
+
+class NCA(nn.Module):
+    def __init__(self, in_dim, hidden_dim, num_layers, K, dropout):
+        super(NCA, self).__init__()
+        self.K = K
+        kernel_size = K
+        conv2d_layers = []
+        for i in range(num_layers):
+            input_dim = in_dim if i == 0 else hidden_dim
+            dilation = 2 ** i
+            padding = (kernel_size - 1) * dilation // 2
+            conv2d_layers += [TCN2DBlock(input_dim, hidden_dim, kernel_size, padding, dilation, dropout)]
+        self.conv2d_layers = ModuleList(conv2d_layers)
+
+    def forward(self, x, pe):
+        pe = pe.unsqueeze(2)
+        for idx, c_layer in enumerate(self.conv2d_layers):
+            if idx != 0:
+                x = x + pe
+            x = c_layer(x)
+        return x[:, :, self.K]
 
 
 class SimST(nn.Module):
@@ -83,7 +104,7 @@ class SimST(nn.Module):
         #                              Dropout(self.dropout),
         #                              Linear(self.hidden_dim, self.hidden_dim),
         #                              Tanh())
-        self.static_conv = TCN2D(self.in_dim, self.hidden_dim, self.K, self.dropout)
+        self.static_conv = NCA(self.in_dim, self.hidden_dim, self.gru_layer, self.K, self.dropout)
 
         self.dynamic_mlp = Sequential(Linear(3 * self.date_emb + self.loc_emb, self.hidden_dim),
                                       Tanh(),
@@ -127,9 +148,9 @@ class SimST(nn.Module):
                                        all_hour_emb], dim=-1)
         dynamic_graph_emb = self.dynamic_mlp(dynamic_graph_emb)
         xn = self.pm25_mlp(xn)
+        static_graph_emb = self.static_conv(features, dynamic_graph_emb)  # 消融实验3，去除时序特征
         for i in range(pred_len):
-            static_graph_emb = self.static_conv(features[:, :hist_len + i])  # 消融实验3，去除时序特征
-            graph_emb = dynamic_graph_emb[:, :hist_len + i] * static_graph_emb
+            graph_emb = static_graph_emb[:, :hist_len + i]
             graph_emb = torch.cat([graph_emb, xn[:, :hist_len + i]], dim=-1)
             # dynamic_out, dynamic_hidden = self.dynamic_encoder(dynamic_graph_emb)
             # pred = torch.cat([dynamic_hidden[-1], dynamic_hidden[-2]], dim=1)
