@@ -277,7 +277,7 @@ class SimParser(data.Dataset):
         indices = out_max_k_index.transpose(1, 0)
         out_features_k = feature_one_hop_loc[indices,
                          np.tile(np.arange(indices.shape[1]), (indices.shape[0], 1)), :]
-        out_node_features = -out_weight_k * out_features_k
+        out_node_features = out_weight_k * out_features_k
 
         out_weight_mean = np.mean(out_weight, axis=-1).reshape((-1, 1))
         out_weight_mean = -out_weight_mean
