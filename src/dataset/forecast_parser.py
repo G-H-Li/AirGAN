@@ -279,9 +279,6 @@ class SimParser(data.Dataset):
                          np.tile(np.arange(indices.shape[1]), (indices.shape[0], 1)), :]
         out_node_features = out_weight_k * out_features_k
 
-        out_weight_mean = np.mean(out_weight, axis=-1).reshape((-1, 1))
-        out_weight_mean = -out_weight_mean
-
         # second one-hop -> self
         in_node_attr = np.transpose(self.node_attr, (1, 0, 2))[loc_idx][:, one_hop_loc]
         in_src_nodes = feature_one_hop_loc.transpose((1, 0, 2))
@@ -294,9 +291,6 @@ class SimParser(data.Dataset):
         theta = np.abs(in_tar_dir - in_src_wind_dir)
         in_weight = np_relu(np.tanh(3 * in_src_wind_speed * np.cos(theta) / in_tar_dist))
 
-        in_weight_mean = np.mean(in_weight, axis=-1).reshape((-1, 1))
-
-        in_out_weight = np.concatenate((in_weight_mean, out_weight_mean), axis=-1)
         # 获取前K个最大的元素及索引
         in_max_k_index = np.argsort(in_weight, axis=-1)[:, -self.K:]
         in_weight_k = in_weight[np.arange(in_weight.shape[0])[:, None], in_max_k_index, None].transpose(1, 0, 2)
@@ -304,8 +298,9 @@ class SimParser(data.Dataset):
         in_features_k = feature_one_hop_loc[indices,
                          np.tile(np.arange(indices.shape[1]), (indices.shape[0], 1)), :]
         in_node_features = in_weight_k * in_features_k
+
         dynamic_features = np.concatenate((in_node_features, feature_self, out_node_features), axis=0)
-        return self.pm25[index], dynamic_features, self.locs[index], self.embedding_feature[index], in_out_weight
+        return self.pm25[index], dynamic_features, self.locs[index], self.embedding_feature[index]
 
 
 if __name__ == '__main__':

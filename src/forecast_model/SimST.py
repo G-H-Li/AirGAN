@@ -1,7 +1,7 @@
 import torch
 from pytorch_tcn import TCN
-from torch import nn, Tensor
-from torch.nn import Sequential, Linear, GRU, Dropout, Tanh, Conv2d, ReLU, Conv1d, ModuleList
+from torch import nn
+from torch.nn import Sequential, Linear, Dropout, Tanh, Conv2d, ReLU, ModuleList
 from torch.nn.utils.parametrizations import weight_norm
 
 
@@ -117,17 +117,14 @@ class SimST(nn.Module):
         self.dynamic_tcn_encoder = TCN(2 * self.hidden_dim, [self.hidden_dim], dropout=self.dropout,
                                        input_shape='NLC', use_skip_connections=True, output_projection=self.hidden_dim)
 
-        self.pred_mlp = Sequential(Linear(1 * self.hidden_dim, 1),
-                                   Tanh())
-        self.class_mlp = Sequential(Linear(1 * self.hidden_dim, 1),
-                                    Tanh())
+        self.pred_mlp = Sequential(Linear(1 * self.hidden_dim, 1))
+        self.class_mlp = Sequential(Linear(1 * self.hidden_dim, 1))
 
-    def forward(self, pm25_hist, features, city_locs, date_emb, in_out_weight):
+    def forward(self, pm25_hist, features, city_locs, date_emb):
         # PM25: Batch_size, hist_len, 1
         # features: Batch_size, 2, hist_len+pred_len, feature_nums
         # city_locs: Batch_size, 2
         # date_emb: Batch_size, hist_len+pred_len, 3
-        # in_out_weight: Batch_size, hist_len+pred_len, 2
         pred_pm25 = []
         # 消融实验1, 去除额外静态邻近特征
         # features = features[:, [0], :, :]

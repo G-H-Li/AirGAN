@@ -89,17 +89,16 @@ class SimTrainer(ForecastBaseTrainer):
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(train_loader)):
             self.optimizer.zero_grad()
-            pm25, feature, locs, emb_feature, in_out_weight = data
+            pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device).float()
             feature = feature.to(self.device).float()
             emb_feature = emb_feature.int().to(self.device)
             locs = locs.to(self.device).float()
-            in_out_weight = in_out_weight.to(self.device).float()
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
             start_time = time()
-            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
             end_time = time()
 
             loss = self.criterion(pm25_pred, pm25_label)
@@ -122,17 +121,16 @@ class SimTrainer(ForecastBaseTrainer):
         val_loss = 0
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(valid_loader)):
-            pm25, feature, locs, emb_feature, in_out_weight = data
+            pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device).float()
             feature = feature.to(self.device).float()
             emb_feature = emb_feature.int().to(self.device)
             locs = locs.to(self.device).float()
-            in_out_weight = in_out_weight.to(self.device).float()
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
             start_time = time()
-            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
             end_time = time()
 
             loss = self.criterion(pm25_pred, pm25_label)
@@ -154,17 +152,16 @@ class SimTrainer(ForecastBaseTrainer):
         test_loss = 0
         cost_time = 0
         for batch_idx, data in tqdm(enumerate(test_loader)):
-            pm25, feature, locs, emb_feature, in_out_weight = data
+            pm25, feature, locs, emb_feature = data
             pm25 = pm25.to(self.device).float()
             feature = feature.to(self.device).float()
             emb_feature = emb_feature.int().to(self.device)
             locs = locs.to(self.device).float()
-            in_out_weight = in_out_weight.to(self.device).float()
             pm25_label = pm25[:, self.config.hist_len:]
             pm25_hist = pm25[:, :self.config.hist_len]
 
             start_time = time()
-            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature, in_out_weight)
+            pm25_pred = self.model(pm25_hist, feature, locs, emb_feature)
             end_time = time()
 
             loss = self.criterion(pm25_pred, pm25_label)
@@ -226,19 +223,17 @@ class SimTrainer(ForecastBaseTrainer):
         with torch.no_grad():
             for batch_idx, data in tqdm(enumerate(dataloader)):
                 pred = []
-                pm25, feature, locs, emb_feature, in_out_weight = data
+                pm25, feature, locs, emb_feature = data
                 pm25 = pm25.to(self.device)
                 pm25_label = pm25[:, test_hist_len:]
                 pm25_hist = pm25[:, :test_hist_len]
                 feature = feature.to(self.device)
-                in_out_weight = in_out_weight.to(self.device)
                 emb_feature = emb_feature.int().to(self.device)
                 locs = locs.to(self.device)
                 for i in range(pred_count):
                     features = feature[:, :, i*test_hist_len:i*test_hist_len+all_len]
                     emb_features = emb_feature[:, i * test_hist_len:i * test_hist_len + all_len]
-                    in_out_weights = in_out_weight[:, i * test_hist_len:i * test_hist_len + all_len]
-                    pm25_pred = self.model(pm25_hist, features, locs, emb_features, in_out_weights)
+                    pm25_pred = self.model(pm25_hist, features, locs, emb_features)
                     pred.append(pm25_pred)
                     pm25_hist = torch.cat([pm25_hist, pm25_pred], dim=1)[:, -test_hist_len:]
 
@@ -289,19 +284,17 @@ class SimTrainer(ForecastBaseTrainer):
         start_time = time()
         with torch.no_grad():
             pred = []
-            pm25, feature, locs, emb_feature, in_out_weight = dataset[0]
+            pm25, feature, locs, emb_feature = dataset[0]
             pm25 = torch.from_numpy(pm25).to(self.device).unsqueeze(0)
             pm25_label = pm25[:, test_hist_len:]
             pm25_hist = pm25[:, :test_hist_len]
             feature = torch.from_numpy(feature).to(self.device).unsqueeze(0)
-            in_out_weight = torch.from_numpy(in_out_weight).to(self.device).unsqueeze(0)
             emb_feature = torch.from_numpy(emb_feature).int().to(self.device).unsqueeze(0)
             locs = torch.from_numpy(locs).to(self.device).unsqueeze(0)
             for i in range(pred_count):
                 features = feature[:, :, i*test_hist_len:i*test_hist_len+all_len]
                 emb_features = emb_feature[:, i * test_hist_len:i * test_hist_len + all_len]
-                in_out_weights = in_out_weight[:, i * test_hist_len:i * test_hist_len + all_len]
-                pm25_pred = self.model(pm25_hist, features, locs, emb_features, in_out_weights)
+                pm25_pred = self.model(pm25_hist, features, locs, emb_features)
                 pred.append(pm25_pred)
                 pm25_hist = torch.cat([pm25_hist, pm25_pred], dim=1)[:, -test_hist_len:]
 
