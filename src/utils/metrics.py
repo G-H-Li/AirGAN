@@ -9,6 +9,8 @@ from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_
 
 def get_metrics(predict_epoch, label_epoch, predict_mode='group'):
     haze_threshold = 75
+    sudden_change_threshold = 20
+
     predict_haze = predict_epoch >= haze_threshold
     predict_clear = predict_epoch < haze_threshold
     label_haze = label_epoch >= haze_threshold
@@ -27,9 +29,18 @@ def get_metrics(predict_epoch, label_epoch, predict_mode='group'):
         label = label_epoch[:, :, :, 0].transpose((0, 2, 1))
     predict = predict.reshape((-1, predict.shape[-1]))
     label = label.reshape((-1, label.shape[-1]))
+
+    sudden_label_1 = np.abs(label[:, 1:] - label[:, :-1]) >= sudden_change_threshold
+    sudden_label_2 = label[:, :-1] >= haze_threshold
+    sudden_idx = np.logical_and(sudden_label_1, sudden_label_2)
+    sudden_idx = np.pad(sudden_idx, ((0, 0), (0, 1)), 'constant', constant_values=False)
+    label_sudden = label[sudden_idx]
+    predict_sudden = predict[sudden_idx]
+    mae_sudden = np.mean(np.abs(predict_sudden - label_sudden))
+    rmse_sudden = np.mean(np.sqrt(np.square(predict_sudden - label_sudden)))
     mae = np.mean(np.mean(np.abs(predict - label), axis=1))
     rmse = np.mean(np.sqrt(np.mean(np.square(predict - label), axis=1)))
-    return rmse, mae, csi, pod, far
+    return rmse, mae, csi, pod, far, mae_sudden, rmse_sudden
 
 
 def get_class_metrics(predict_epoch, label_epoch):

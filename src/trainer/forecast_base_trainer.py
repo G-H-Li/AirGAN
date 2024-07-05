@@ -39,6 +39,8 @@ class ForecastBaseTrainer(object):
         self.csi_list = []
         self.pod_list = []
         self.far_list = []
+        self.rmse_sud_list = []
+        self.mae_sud_list = []
         self.train_time_list = []
         self.test_time_list = []
         self.valid_time_list = []
@@ -51,6 +53,8 @@ class ForecastBaseTrainer(object):
         self.exp_csi_list = []
         self.exp_pod_list = []
         self.exp_far_list = []
+        self.exp_rmse_sud_list = []
+        self.exp_mae_sud_list = []
         self.exp_train_time_list = []
         self.exp_test_time_list = []
         self.exp_valid_time_list = []
@@ -179,6 +183,8 @@ class ForecastBaseTrainer(object):
             self.csi_list = []
             self.pod_list = []
             self.far_list = []
+            self.rmse_sud_list = []
+            self.mae_sud_list = []
 
             for epoch in range(self.config.epochs):
                 self.logger.debug(f'Experiment time :{exp}, Epoch time : {epoch}')
@@ -198,16 +204,17 @@ class ForecastBaseTrainer(object):
                     best_epoch = epoch
                     # test model
                     test_loss, predict_epoch, label_epoch, test_time = self._test(test_loader)
-                    rmse, mae, csi, pod, far = get_metrics(predict_epoch, label_epoch, predict_mode=self.predict_mode)
+                    rmse, mae, csi, pod, far, mae_sudden, rmse_sudden = get_metrics(predict_epoch, label_epoch, predict_mode=self.predict_mode)
 
                     self.logger.info('\n Epoch time: %d, test results: \n'
                                      'Train loss: %0.4f, Val loss: %0.4f, Test loss: %0.4f \n'
                                      'Train time: %f, Val time: %f, Test time: %f \n'
                                      'RMSE: %0.2f, MAE: %0.2f \n'
-                                     'CSI: %0.4f, POD: %0.4f, FAR: %0.4f'
+                                     'CSI: %0.4f, POD: %0.4f, FAR: %0.4f \n'
+                                     'RMSE_SUD: %0.2f, MAE_SUD: %0.2f'
                                      % (epoch, train_loss, val_loss, test_loss,
                                         train_time, valid_time, test_time,
-                                        rmse, mae, csi, pod, far))
+                                        rmse, mae, csi, pod, far, rmse_sudden, mae_sudden))
                     self.train_loss_list.append(train_loss)
                     self.valid_loss_list.append(val_loss)
                     self.test_loss_list.append(test_loss)
@@ -219,6 +226,8 @@ class ForecastBaseTrainer(object):
                     self.csi_list.append(csi)
                     self.pod_list.append(pod)
                     self.far_list.append(far)
+                    self.rmse_sud_list.append(rmse_sudden)
+                    self.mae_sud_list.append(mae_sudden)
                     # save model
                     torch.save(self.model.state_dict(),
                                os.path.join(exp_dir, f'model_{self.config.model_name}.pth'))
@@ -234,11 +243,12 @@ class ForecastBaseTrainer(object):
                              'Train loss: %0.4f, Val loss: %0.4f, Test loss: %0.4f \n'
                              'Train time: %f, Val time: %f, Test time: %f \n'
                              'RMSE: %0.2f, MAE: %0.2f \n'
-                             'CSI: %0.4f, POD: %0.4f, FAR: %0.4f'
+                             'CSI: %0.4f, POD: %0.4f, FAR: %0.4f \n'
+                             'RMSE_SUD: %0.2f, MAE_SUD: %0.2f'
                              % (exp, self.train_loss_list[-1], self.valid_loss_list[-1], self.test_loss_list[-1],
                                 self.train_time_list[-1], self.valid_time_list[-1], self.test_time_list[-1],
                                 self.rmse_list[-1], self.mae_list[-1], self.csi_list[-1],
-                                self.pod_list[-1], self.far_list[-1]))
+                                self.pod_list[-1], self.far_list[-1], self.rmse_sud_list[-1], self.mae_sud_list[-1]))
             self.exp_train_loss_list.append(self.train_loss_list[-1])
             self.exp_test_loss_list.append(self.test_loss_list[-1])
             self.exp_valid_loss_list.append(self.valid_loss_list[-1])
@@ -250,6 +260,8 @@ class ForecastBaseTrainer(object):
             self.exp_csi_list.append(self.csi_list[-1])
             self.exp_pod_list.append(self.pod_list[-1])
             self.exp_far_list.append(self.far_list[-1])
+            self.exp_rmse_sud_list.append(self.rmse_sud_list[-1])
+            self.exp_mae_sud_list.append(self.mae_sud_list[-1])
 
             # save metrics
             metrics_data = np.concatenate((np.array(self.train_loss_list), np.array(self.valid_loss_list),
@@ -257,7 +269,8 @@ class ForecastBaseTrainer(object):
                                            np.array(self.valid_time_list), np.array(self.test_time_list),
                                            np.array(self.rmse_list),
                                            np.array(self.mae_list), np.array(self.csi_list),
-                                           np.array(self.pod_list), np.array(self.far_list)), axis=0)
+                                           np.array(self.pod_list), np.array(self.far_list),
+                                           np.array(self.rmse_sud_list), np.array(self.mae_sud_list)), axis=0)
             np.save(os.path.join(exp_dir, f'exp_{exp}_res.npy'), metrics_data)
 
         self.logger.info("\n Finished all experiments: \n"
@@ -271,12 +284,15 @@ class ForecastBaseTrainer(object):
                          'MAE        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_mae_list)) +
                          'CSI        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_csi_list)) +
                          'POD        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_pod_list)) +
-                         'FAR        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_far_list)))
+                         'FAR        | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_far_list)) +
+                         'RMSE_SUD   | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_rmse_sud_list)) +
+                         'MAE_SUD    | mean: %0.4f std: %0.4f\n' % (get_mean_std(self.exp_mae_sud_list)))
         metrics_data = np.concatenate((np.array(self.exp_train_loss_list), np.array(self.exp_valid_loss_list),
                                        np.array(self.exp_test_loss_list), np.array(self.exp_train_time_list),
                                        np.array(self.exp_valid_time_list), np.array(self.exp_test_time_list),
                                        np.array(self.exp_rmse_list),
                                        np.array(self.exp_mae_list), np.array(self.exp_csi_list),
-                                       np.array(self.exp_pod_list), np.array(self.exp_far_list)), axis=0)
+                                       np.array(self.exp_pod_list), np.array(self.exp_far_list),
+                                       np.array(self.exp_rmse_sud_list), np.array(self.exp_mae_sud_list)), axis=0)
         np.save(os.path.join(self.record_dir, 'all_exp_res.npy'), metrics_data)
         self.logger.debug('Experiments finished.')
